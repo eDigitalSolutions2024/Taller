@@ -5,15 +5,42 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import AppLayout from "./layouts/AppLayout";
 import Dashboard from "./pages/Dashboard";
+
+// Clientes
 import ClientesLayout from "./pages/clientes/ClientesLayout";
 import AltaCliente from "./pages/clientes/AltaCliente";
 import ConsultaClientes from "./pages/clientes/ConsultaClientes";
-// importa tus otras páginas si ya existen
-// import Ordenes from "./pages/Ordenes";
-// import Clientes from "./pages/Clientes";
-// import Inventario from "./pages/Inventario";
-// import Reportes from "./pages/Reportes";
-// import Ajustes from "./pages/Ajustes";
+
+// Refaccionaria
+import RefaccionariaLayout from "./pages/refaccionaria/RefaccionariaLayout";
+import EntradaInventario from "./pages/refaccionaria/EntradaInventario";
+import SalidaRefaccion from "./pages/refaccionaria/SalidaRefaccion";
+import Devoluciones from "./pages/refaccionaria/devoluciones/DevolucionesLayout";
+import ConsultarInventario from "./pages/refaccionaria/ConsultarInventario";
+import ConsultarFacturaProveedor from "./pages/refaccionaria/ConsultarFacturaProveedor.jsx";
+import BDCodigos from "./pages/refaccionaria/BDCodigos";
+
+// Proveedores
+import ProveedoresLayout from "./pages/proveedores/ProveedoresLayout";
+import AltaProveedor from "./pages/proveedores/AltaProveedor";
+import ConsultaProveedores from "./pages/proveedores/ConsultaProveedores";
+
+// Vehículo
+import VehiculosLayout from "./pages/vehiculo/VehiculosLayout";
+import VehiculoEntrada from "./pages/vehiculo/VehiculosEntrada";
+import VehiculoConsultaOrdenes from "./pages/vehiculo/VehiculosConsultaOrdenes";
+import VehiculoConsultaCerradas from "./pages/vehiculo/VehiculosConsultaCerradas";
+import VehiculoExportar from "./pages/vehiculo/VehiculosExportar";
+
+
+// ⇩ añade estos imports
+import DevDinero from "./pages/refaccionaria/devoluciones/dinero";
+import DevPieza from "./pages/refaccionaria/devoluciones/pieza";
+import DevVale from "./pages/refaccionaria/devoluciones/vale";
+import ConsultaDevoluciones from "./pages/refaccionaria/devoluciones/consultas";
+import ConsultaVales from "./pages/refaccionaria/devoluciones/consultas-vales";
+
+
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -27,7 +54,7 @@ export default function App() {
         {/* Público */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* Zona privada: el layout envuelve TODAS las rutas con wildcard */}
+        {/* Zona privada */}
         <Route
           path="/*"
           element={
@@ -36,22 +63,58 @@ export default function App() {
             </PrivateRoute>
           }
         >
-          {/* index de la zona privada → /dashboard */}
+          {/* index → /dashboard */}
           <Route index element={<Navigate to="dashboard" replace />} />
 
-          {/* Tus rutas ABSOLUTAS del navbar funcionan así: */}
+          {/* Dashboard */}
           <Route path="dashboard" element={<Dashboard />} />
 
+          {/* Clientes */}
           <Route path="clientes/*" element={<ClientesLayout />}>
             <Route index element={<Navigate to="consulta" replace />} />
             <Route path="alta" element={<AltaCliente />} />
             <Route path="consulta" element={<ConsultaClientes />} />
           </Route>
-          {/* <Route path="ordenes" element={<Ordenes />} /> */}
-          {/* <Route path="clientes" element={<Clientes />} /> */}
-          {/* <Route path="inventario" element={<Inventario />} /> */}
-          {/* <Route path="reportes" element={<Reportes />} /> */}
-          {/* <Route path="ajustes" element={<Ajustes />} /> */}
+
+          {/* Proveedores */}
+          <Route path="proveedores/*" element={<ProveedoresLayout />}>
+            <Route index element={<Navigate to="alta" replace />} />
+            <Route path="alta" element={<AltaProveedor />} />
+            <Route path="consultar" element={<ConsultaProveedores />} />
+          </Route>
+
+
+            {/* Vehículo */}
+          <Route path="vehiculo/*" element={<VehiculosLayout />}>
+            <Route index element={<Navigate to="entrada" replace />} />
+            <Route path="entrada" element={<VehiculoEntrada />} />
+            <Route path="consulta-ordenes" element={<VehiculoConsultaOrdenes />} />
+            <Route path="consulta-ordenes-cerradas" element={<VehiculoConsultaCerradas />} />
+            <Route path="exportar" element={<VehiculoExportar />} />
+          </Route>
+
+          {/* Refaccionaria */}
+          <Route path="refaccionaria/*" element={<RefaccionariaLayout />}>
+            <Route index element={<Navigate to="entrada" replace />} />
+            <Route path="entrada" element={<EntradaInventario />} />
+            <Route path="salida" element={<SalidaRefaccion />} />
+
+            {/* ✅ Rutas anidadas de Devoluciones */}
+              <Route path="devoluciones/*" element={<Devoluciones />}>
+                <Route index element={<Navigate to="dinero" replace />} />
+                <Route path="dinero" element={<DevDinero />} />
+                <Route path="pieza" element={<DevPieza />} />
+                <Route path="vale" element={<DevVale />} />
+                <Route path="consultas" element={<ConsultaDevoluciones />} />
+                <Route path="consultas-vales" element={<ConsultaVales />} />
+              </Route>
+              
+            <Route path="consultar" element={<ConsultarInventario />} />
+            <Route path="factura-proveedor" element={<ConsultarFacturaProveedor />} />
+            <Route path="bd-codigos" element={<BDCodigos />} />
+          </Route>
+
+          
         </Route>
 
         {/* Fallback */}

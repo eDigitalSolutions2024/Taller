@@ -169,3 +169,54 @@
 
 /* Cuando el sidebar está colapsado, ocultamos submenú */
 .sidebar.is-collapsed .sidebar__sublinks{ display: none !important; }
+
+
+/* Asegura altura completa del sidebar */
+.sidebar{
+  height: 100vh;              /* fallback */
+  min-height: 0;              /* permite que los hijos flex puedan scrollear */
+}
+@supports (height: 100dvh){
+  .sidebar{ height: 100dvh; } /* corrige en móviles iOS/Android */
+}
+
+/* La zona de navegación crece y hace scroll */
+.sidebar__nav{
+  flex: 1 1 auto;             /* ocupa el espacio entre top y bottom */
+  overflow-y: auto;           /* << barra de scroll */
+  min-height: 0;              /* importante en layouts flex */
+  padding-right: 6px;         /* deja espacio para la barra */
+  scrollbar-gutter: stable both-edges; /* evita “saltos” al aparecer la barra */
+}
+
+/* Scrollbar bonita (opcional) */
+.sidebar__nav::-webkit-scrollbar{ width: 8px; }
+.sidebar__nav::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.35); border-radius: 8px;
+}
+.sidebar__nav::-webkit-scrollbar-track{ background: transparent; }
+
+/* En modo colapsado puedes quitar el padding derecho si quieres */
+.sidebar.is-collapsed .sidebar__nav{ padding-right: 0; }
+
+/* sub-submenú (Devoluciones dentro de Refaccionaria) */
+.sidebar__subgroup { margin-left: 0.1rem; }
+.sidebar__subgroup-toggle { width: 100%; text-align: left; border: 0; background: none; cursor: pointer; }
+
+.sidebar__subsublinks { display: none; padding-left: 3rem; }
+.sidebar__subgroup.open > .sidebar__subsublinks { display: block; }
+
+.sidebar__subsublink {
+  display: block;
+  padding: .35rem .75rem;
+  border-radius: .5rem;
+  font-size: .92rem;
+  opacity: .95;
+  color: #fff;
+}
+.sidebar__subsublink:hover,
+.sidebar__subsublink.active {
+  background: rgba(255,255,255,.08); /* ajusta a tu tema */
+}
+
+

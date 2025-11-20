@@ -16,5 +16,22 @@ app.use('/api/auth', require('./routes/authRoutes'));
 
 app.use("/api/clientes", require("./routes/clientes"));
 
+
+app.use('/api/proveedores', require('./routes/proveedores'));
+
+app.use('/api/entradas', require('./routes/entradas'));
+
+app.use('/api/inventario', require('./routes/inventario'));
+
+// MONTA LAS RUTAS
+app.use('/api/codigos', require('./routes/codigos'));  // <— IMPORTANTE
+
+app.use('/api/salidas', require('./routes/salidas'));
+
+app.use('/api/devoluciones', require('./routes/devoluciones')); 
+
+// index.js / app.js del backend
+app.use('/api', require('./routes/facturas')); // ahora existe GET /api/facturas-proveedor
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Server en http://localhost:${PORT}`));
