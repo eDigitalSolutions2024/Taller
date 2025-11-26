@@ -1,17 +1,124 @@
 // src/pages/vehiculo/VehiculoEntrada.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { getClientes } from "../../api/customers"; // 👈 IMPORTANTE
+import VehiculoNuevoForm from "./VehiculoNuevoForm"; 
+import { listClientes } from "../../api/customers";      // si lo usas
+import { listVehiculosByCliente } from "../../api/vehiculos"; // 👈 NUEVO
 
 export default function VehiculoEntrada() {
   const [q, setQ] = useState("");
+  const [clientes, setClientes] = useState([]);
+  const [filtrados, setFiltrados] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
+  const [mostrarAcciones, setMostrarAcciones] = useState(false);
+  const [mostrarFormNuevoCarro, setMostrarFormNuevoCarro] = useState(false);
+  const [vehiculosCliente, setVehiculosCliente] = useState([]);
+const [loadingVehiculos, setLoadingVehiculos] = useState(false);
+const [errorVehiculos, setErrorVehiculos] = useState("");
+
+
+  useEffect(() => {
+    const cargarClientes = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const res = await getClientes();
+        console.log("BACKEND RESPUESTA:", res.data);
+        const data = Array.isArray(res.data?.data) ? res.data.data : [];
+
+        setClientes(data);
+        setFiltrados(data);
+      } catch (err) {
+        console.error("Error al obtener clientes:", err);
+        setError("No se pudieron cargar los clientes.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarClientes();
+  }, []);
+
+
+
+  // 2) Filtrar lista mientras escribes
+  useEffect(() => {
+    const term = q.toLowerCase();
+    if (!term) {
+      setFiltrados(clientes);
+      return;
+    }
+
+    const resultado = clientes.filter((c) =>
+      (c.nombre || c.nombre_cliente || "").toLowerCase().includes(term)
+    );
+    setFiltrados(resultado);
+  }, [q, clientes]);
+
+  const handleSeleccion = (cliente) => {
+    setClienteSeleccionado(cliente);
+    setMostrarAcciones(false); // hasta que le den clic a Buscar
+    const nombre =
+      cliente.nombre ||
+      cliente.nombre_cliente ||
+      `${cliente.nombre_cliente} ${cliente.apellidos || ""}`.trim();
+    setQ(nombre);
+  };
+
+const handleBuscar = () => {
+  if (!clienteSeleccionado) {
+    alert("Primero selecciona un cliente de la lista.");
+    return;
+  }
+
+  setMostrarAcciones(true);
+  cargarVehiculosCliente(clienteSeleccionado._id); // 👈 AQUÍ SE CARGAN
+};
+
+
+  const handleNuevoCarro = () => {
+    console.log("Nuevo carro para cliente:", clienteSeleccionado);
+    setMostrarFormNuevoCarro(true); // 👈 mostrar el formulario
+  };
+
+  const handleSinCarro = () => {
+    console.log("Orden sin carro para cliente:", clienteSeleccionado);
+    // aquí luego harás el flujo de orden sin carro
+  };
+
+
+  const cargarVehiculosCliente = async (clienteId) => {
+  try {
+    setLoadingVehiculos(true);
+    setErrorVehiculos("");
+
+    const res = await listVehiculosByCliente(clienteId);
+    // el backend responde { ok: true, data: [...] }
+    setVehiculosCliente(res.data.data || []);
+  } catch (err) {
+    console.error("Error cargando vehículos del cliente:", err);
+    setErrorVehiculos("No se pudieron cargar los vehículos del cliente.");
+    setVehiculosCliente([]);
+  } finally {
+    setLoadingVehiculos(false);
+  }
+};
+
 
   return (
     <div className="container-fluid">
-      {/* Título centrado */}
-      <h2 className="text-center fw-bold my-3" style={{letterSpacing: "2px"}}>
+      {/* Título */}
+      <h2
+        className="text-center fw-bold my-3"
+        style={{ letterSpacing: "2px" }}
+      >
         NUEVA ORDEN DE SERVICIO
       </h2>
 
-      {/* Card contenedora */}
+      {/* Card principal */}
       <div className="card shadow-sm">
         <div className="card-body">
           <div className="row g-2 align-items-center">
@@ -20,37 +127,117 @@ export default function VehiculoEntrada() {
               <label className="fw-semibold mb-0">Nombre Cliente:</label>
             </div>
 
-            {/* Input de búsqueda */}
+            {/* Input */}
             <div className="col-12 col-md-6">
               <input
                 type="text"
                 className="form-control"
                 placeholder="Buscar un Nombre..."
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setClienteSeleccionado(null);
+                  setMostrarAcciones(false);
+                }}
               />
             </div>
 
-            {/* Botón (pendiente de integrar) */}
+            {/* Botón Buscar */}
             <div className="col-12 col-md-3 d-grid">
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled
-                title="Pendiente de implementar"
-                // TODO: aquí conectaremos el buscador de clientes (modal/lista/autocompletar)
-                onClick={() => {}}
+                onClick={handleBuscar}
               >
                 Buscar
               </button>
             </div>
           </div>
+
+          {/* Estado de carga / error */}
+          {loading && (
+            <p className="text-muted mt-2 mb-0">Cargando clientes...</p>
+          )}
+          {error && <p className="text-danger mt-2 mb-0">{error}</p>}
+
+          {/* Lista de clientes */}
+          {!loading && filtrados.length > 0 && (
+            <div className="mt-3">
+              <ul
+                className="list-group"
+                style={{ maxHeight: "260px", overflowY: "auto" }}
+              >
+                {filtrados.map((c) => {
+                  const nombre =
+                    c.nombre ||
+                    c.nombre_cliente ||
+                    `${c.nombre_cliente} ${c.apellidos || ""}`.trim();
+
+                  const isActive =
+                    clienteSeleccionado &&
+                    (clienteSeleccionado._id === c._id ||
+                      clienteSeleccionado.id === c.id);
+
+                  return (
+                    <li
+                      key={c._id || c.id}
+                      className={
+                        "list-group-item list-group-item-action" +
+                        (isActive ? " active" : "")
+                      }
+                      style={{ cursor: "pointer" }}
+                      onClick={() => handleSeleccion(c)}
+                    >
+                      {nombre}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {!loading && !error && filtrados.length === 0 && (
+            <p className="text-muted mt-3 mb-0">
+              No se encontraron clientes con ese nombre.
+            </p>
+          )}
+
+          {/* Cliente seleccionado + botones */}
+          {/* Cliente seleccionado + botones */}
+            {mostrarAcciones && clienteSeleccionado && (
+              <div className="mt-3">
+                <p className="mb-2">
+                  <strong>Cliente Seleccionado: </strong>
+                  {clienteSeleccionado.nombre || clienteSeleccionado.nombre_cliente}
+                </p>
+
+                <button
+                  type="button"
+                  className="btn btn-primary me-2"
+                  onClick={handleNuevoCarro}
+                >
+                  Nuevo Carro
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleSinCarro}
+                >
+                  Sin Carro
+                </button>
+              </div>
+            )}
         </div>
       </div>
 
-      {/* Nota opcional para dev */}
+       {/* 👇 AQUÍ APARECE EL FORMULARIO GRANDE CUANDO DAN "Nuevo Carro" */}
+      {mostrarFormNuevoCarro && clienteSeleccionado && (
+        <VehiculoNuevoForm cliente={clienteSeleccionado} />
+      )}
+
       <small className="text-muted d-block mt-2">
-        * El botón “Buscar” está deshabilitado temporalmente. En el siguiente paso lo conectamos a la búsqueda de clientes.
+        * Primero selecciona un cliente de la lista y luego da clic en “Buscar”
+        para continuar con el registro del vehículo o de la orden sin carro.
       </small>
     </div>
   );

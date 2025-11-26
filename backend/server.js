@@ -19,6 +19,8 @@ app.use("/api/clientes", require("./routes/clientes"));
 
 app.use('/api/proveedores', require('./routes/proveedores'));
 
+app.use('/api/vehiculos', require('./routes/vehiculos')); // 👈 NUEVA
+
 app.use('/api/entradas', require('./routes/entradas'));
 
 app.use('/api/inventario', require('./routes/inventario'));
