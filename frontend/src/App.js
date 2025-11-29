@@ -31,6 +31,7 @@ import VehiculoEntrada from "./pages/vehiculo/VehiculosEntrada";
 import VehiculoConsultaOrdenes from "./pages/vehiculo/VehiculosConsultaOrdenes";
 import VehiculoConsultaCerradas from "./pages/vehiculo/VehiculosConsultaCerradas";
 import VehiculoExportar from "./pages/vehiculo/VehiculosExportar";
+import VehiculoOrdenDetalle from "./pages/vehiculo/VehiculoOrdenDetalle";
 
 
 // ⇩ añade estos imports
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="consulta-ordenes" element={<VehiculoConsultaOrdenes />} />
             <Route path="consulta-ordenes-cerradas" element={<VehiculoConsultaCerradas />} />
             <Route path="exportar" element={<VehiculoExportar />} />
+            <Route path="orden/:id" element={<VehiculoOrdenDetalle />} />
           </Route>
 
           {/* Refaccionaria */}

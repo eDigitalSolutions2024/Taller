@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { createVehiculo } from "../../api/vehiculos";
 
-export default function VehiculoNuevoForm({ cliente }) {
+export default function VehiculoNuevoForm({ cliente, initialData, readOnly = false, }) {
   const [form, setForm] = useState({
     // ----- Datos de orden / cabecera -----
     ordenServicio: "",
@@ -115,8 +115,18 @@ useEffect(() => {
   }));
 }, [cliente]);
 
+// cuando viene una orden completa para detalle
+useEffect(() => {
+  if (!initialData) return;
+  setForm((prev) => ({
+    ...prev,
+    ...initialData,
+  }));
+}, [initialData]);
 
   const handleChange = (e) => {
+    if (readOnly) return;   // 👈 no permitir editar en detalle
+
     const { name, value, type, checked } = e.target;
     setForm((prev) => ({
       ...prev,
@@ -127,6 +137,8 @@ useEffect(() => {
   // dentro del componente:
 const handleSubmit = async (e) => {
   e.preventDefault();
+  if (readOnly) return;  
+
   if (!cliente || !cliente._id) {
     alert("No hay cliente seleccionado.");
     return;
@@ -892,11 +904,13 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
-          <div className="mt-3 text-center">
-            <button type="submit" className="btn btn-success px-5">
-              Guardar
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="mt-3 text-center">
+              <button type="submit" className="btn btn-success px-5">
+                Guardar
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

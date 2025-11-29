@@ -4,6 +4,9 @@ import { getClientes } from "../../api/customers"; // 👈 IMPORTANTE
 import VehiculoNuevoForm from "./VehiculoNuevoForm"; 
 import { listClientes } from "../../api/customers";      // si lo usas
 import { listVehiculosByCliente } from "../../api/vehiculos"; // 👈 NUEVO
+import { useNavigate } from "react-router-dom";
+
+
 
 export default function VehiculoEntrada() {
   const [q, setQ] = useState("");
@@ -17,6 +20,8 @@ export default function VehiculoEntrada() {
   const [vehiculosCliente, setVehiculosCliente] = useState([]);
 const [loadingVehiculos, setLoadingVehiculos] = useState(false);
 const [errorVehiculos, setErrorVehiculos] = useState("");
+
+const navigate = useNavigate();  
 
 
   useEffect(() => {
@@ -202,31 +207,73 @@ const handleBuscar = () => {
             </p>
           )}
 
-          {/* Cliente seleccionado + botones */}
-          {/* Cliente seleccionado + botones */}
-            {mostrarAcciones && clienteSeleccionado && (
-              <div className="mt-3">
-                <p className="mb-2">
-                  <strong>Cliente Seleccionado: </strong>
-                  {clienteSeleccionado.nombre || clienteSeleccionado.nombre_cliente}
-                </p>
+     {/* 4) Después de dar Buscar → mostrar vehículos del cliente + acciones */}
+{mostrarAcciones && clienteSeleccionado && (
+  <div className="mt-3">
+    {/* Lista de vehículos del cliente */}
+    <div className="mb-2">
+      {loadingVehiculos && (
+        <p className="text-muted mb-1">Cargando vehículos...</p>
+      )}
 
-                <button
-                  type="button"
-                  className="btn btn-primary me-2"
-                  onClick={handleNuevoCarro}
-                >
-                  Nuevo Carro
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleSinCarro}
-                >
-                  Sin Carro
-                </button>
-              </div>
-            )}
+      {errorVehiculos && (
+        <p className="text-danger mb-1">{errorVehiculos}</p>
+      )}
+
+      {!loadingVehiculos && !errorVehiculos && vehiculosCliente.length > 0 && (
+        <div className="d-flex flex-wrap gap-2 mb-2">
+          {vehiculosCliente.map((v) => {
+            const label = `${v.marca || ""} ${v.modelo || ""} - ${
+              v.anio || ""
+            } - ${v.color || ""}`.trim();
+
+            return (
+              <button
+                key={v._id}
+                type="button"
+                className="btn btn-outline-primary btn-sm"
+                onClick={() => navigate(`/vehiculo/orden/${v._id}`)}   // 👈 ir al detalle
+  >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {!loadingVehiculos &&
+        !errorVehiculos &&
+        vehiculosCliente.length === 0 && (
+          <p className="text-muted mb-2">
+            Este cliente aún no tiene vehículos registrados.
+          </p>
+        )}
+    </div>
+
+    {/* Cliente seleccionado + botones de acción */}
+    <p className="mb-2">
+      <strong>Cliente Seleccionado: </strong>
+      {clienteSeleccionado.nombre || clienteSeleccionado.nombre_cliente}
+    </p>
+
+    <button
+      type="button"
+      className="btn btn-primary me-2"
+      onClick={handleNuevoCarro}
+    >
+      Nuevo Carro
+    </button>
+    <button
+      type="button"
+      className="btn btn-secondary"
+      onClick={handleSinCarro}
+    >
+      Sin Carro
+    </button>
+  </div>
+)}
+
+
         </div>
       </div>
 

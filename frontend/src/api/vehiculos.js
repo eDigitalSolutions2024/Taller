@@ -1,5 +1,8 @@
 // src/api/vehiculos.js
 import http from "./http";
+import axios from "axios"
+const API = process.env.REACT_APP_API_URL || "http://localhost:8010";
+
 
 // Crear una nueva "entrada de vehículo" para un cliente
 export const createVehiculo = (clienteId, data) =>
@@ -8,3 +11,29 @@ export const createVehiculo = (clienteId, data) =>
 // (opcional) listar vehículos de un cliente
 export const listVehiculosByCliente = (clienteId) =>
   http.get(`/vehiculos/cliente/${clienteId}`);
+
+// NUEVO: consulta general de órdenes
+export const listOrdenesServicio = (params) =>
+  http.get("/vehiculos/ordenes", { params });
+
+export const getVehiculoById = (id) =>
+  http.get(`/vehiculos/${id}`);
+
+export const updateServicioReparacion = (id, servicioReparacion) =>
+  http.put(`/vehiculos/${id}/servicio`, { servicioReparacion });
+
+
+export const saveRequisicionDiagnostico = (id, payload) =>
+  http.put(`/vehiculos/${id}/requisicion-diagnostico`, payload);
+
+// 👇 nuevo ayudante
+export const openOperativoPdf = (id) => {
+  const url = `${API}/vehiculos/${id}/operativo-pdf`;
+  window.open(url, "_blank", "noopener");
+};
+
+// 👇 abre el PDF de impresión / contrato
+export const openImprimirPdf = (id) => {
+  const url = `${API}/vehiculos/${id}/orden-pdf`;
+  window.open(url, "_blank", "noopener");
+};
