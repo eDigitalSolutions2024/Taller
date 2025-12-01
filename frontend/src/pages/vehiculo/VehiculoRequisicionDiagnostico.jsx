@@ -131,11 +131,29 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     handleRemoveRow(idx);
   };
 
-  const handleSetStatus = (idx, estatus) => {
-    setRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, estatus } : r))
+   const handleSetStatus = async (idx, estatus) => {
+    // Guardamos copia para poder revertir si falla el backend
+    const prevRows = rows;
+    const nuevasFilas = rows.map((r, i) =>
+      i === idx ? { ...r, estatus } : r
     );
+
+    // Actualizamos UI primero (optimista)
+    setRows(nuevasFilas);
+
+    try {
+      await saveRequisicionDiagnostico(orden._id, {
+        diagnosticoTecnico: diagnostico,
+        refacciones: nuevasFilas,
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Error al actualizar el estatus de la refacción.");
+      // Revertimos cambios en UI
+      setRows(prevRows);
+    }
   };
+
 
   const totalGeneral = useMemo(
     () => rows.reduce((acc, r) => acc + (Number(r.importeTotal) || 0), 0),

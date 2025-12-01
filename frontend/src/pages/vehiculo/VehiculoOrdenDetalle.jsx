@@ -1,18 +1,24 @@
 // src/pages/vehiculo/VehiculoOrdenDetalle.jsx
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getVehiculoById, openOperativoPdf, openImprimirPdf   } from "../../api/vehiculos";
+import {
+  getVehiculoById,
+  openOperativoPdf,
+  openImprimirPdf,
+} from "../../api/vehiculos";
 import VehiculoNuevoForm from "./VehiculoNuevoForm";
 import ServicioReparacionTab from "./ServicioReparacionTab";
 import VehiculoRequisicionDiagnostico from "./VehiculoRequisicionDiagnostico";
 import VehiculoPresupuestoVenta from "./VehiculoPresupuestoVenta"; // 👈 NUEVO
+import VehiculoOrdenGeneral from "./VehiculoOrdenGeneral";
+
 
 export default function VehiculoOrdenDetalle() {
   const { id } = useParams();
   const [orden, setOrden] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("datos"); // 'datos' | 'servicio' | 'req' | 'presupuesto'
+  const [tab, setTab] = useState("datos"); // 'datos' | 'servicio' | 'req' | 'presupuesto' | 'general'
   const [ordenIniciada, setOrdenIniciada] = useState(false);
 
   useEffect(() => {
@@ -102,9 +108,7 @@ export default function VehiculoOrdenDetalle() {
         {ordenIniciada && (
           <li className="nav-item">
             <button
-              className={
-                "nav-link" + (tab === "presupuesto" ? " active" : "")
-              }
+              className={"nav-link" + (tab === "presupuesto" ? " active" : "")}
               type="button"
               onClick={() => setTab("presupuesto")}
             >
@@ -113,20 +117,17 @@ export default function VehiculoOrdenDetalle() {
           </li>
         )}
 
-        {/* Pestañas futuras (todavía deshabilitadas) */}
+        {/* General: habilitada, Calidad escondida */}
         {ordenIniciada && (
-          <>
-            <li className="nav-item">
-              <button className="nav-link disabled" type="button">
-                Calidad
-              </button>
-            </li>
-            <li className="nav-item">
-              <button className="nav-link disabled" type="button">
-                General
-              </button>
-            </li>
-          </>
+          <li className="nav-item">
+            <button
+              className={"nav-link" + (tab === "general" ? " active" : "")}
+              type="button"
+              onClick={() => setTab("general")}
+            >
+              General
+            </button>
+          </li>
         )}
       </ul>
 
@@ -151,26 +152,35 @@ export default function VehiculoOrdenDetalle() {
       )}
 
       {tab === "presupuesto" && ordenIniciada && (
-        <VehiculoPresupuestoVenta orden={orden} />
+          <VehiculoPresupuestoVenta
+            orden={orden}
+            onSaved={(vActualizado) => setOrden(vActualizado)}
+          />
+        )}
+
+      {/* Tab General (por ahora solo placeholder, luego lo llenamos) */}
+      {tab === "general" && ordenIniciada && (
+        <VehiculoOrdenGeneral orden={orden} />
       )}
+
 
       {/* Botones debajo: Imprimir y Operativo */}
       <div className="text-center my-3">
-       <button
-    type="button"
-    className="btn btn-secondary me-2"
-    onClick={() => openImprimirPdf(orden._id)}
-  >
-    Imprimir
-  </button>
+        <button
+          type="button"
+          className="btn btn-secondary me-2"
+          onClick={() => openImprimirPdf(orden._id)}
+        >
+          Imprimir
+        </button>
 
         <button
-    type="button"
-    className="btn btn-primary"
-    onClick={() => openOperativoPdf(orden._id)}   // 👈 AQUÍ
-  >
-    Operativo
-  </button>
+          type="button"
+          className="btn btn-primary"
+          onClick={() => openOperativoPdf(orden._id)}
+        >
+          Operativo
+        </button>
       </div>
     </div>
   );

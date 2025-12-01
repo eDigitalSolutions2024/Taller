@@ -18,7 +18,7 @@ const vehiculoSchema = new Schema(
     // Referencia al cliente dueño del vehículo
     cliente: {
       type: Schema.Types.ObjectId,
-      ref: 'Cliente', // usa el nombre real de tu modelo de clientes
+      ref: 'Cliente',
       required: true,
     },
 
@@ -151,14 +151,11 @@ const vehiculoSchema = new Schema(
         tiempoEntrega: { type: String, default: "" },
         core: { type: String, default: "" },
         observaciones: { type: String, default: "" },
-        // si quieres manejar estatus luego, aquí se podría agregar:
-        // estatus: { type: String, default: 'PENDIENTE' },
-         estatus: {
-      type: String,
-      enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
-      default: 'PENDIENTE',
-    },
-      
+        estatus: {
+          type: String,
+          enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
+          default: 'PENDIENTE',
+        },
       },
     ],
 
@@ -178,6 +175,51 @@ const vehiculoSchema = new Schema(
         documento: { type: String, default: "" }, // p.ej. factura ligada
       },
     ],
+
+    // ===== Presupuesto (refacciones autorizadas) =====
+    presupuesto: [
+      {
+        cant: { type: Number, default: 0 },
+        concepto: { type: String, default: "" },
+        refaccion: { type: String, default: "" },
+        tipo: { type: String, default: "" },
+        marca: { type: String, default: "" },
+        proveedor: { type: String, default: "" },
+        codigo: { type: String, default: "" },
+        precioCompra: { type: Number, default: 0 },
+        tiempoEntrega: { type: String, default: "" },
+        horasMO: { type: Number, default: 0 },
+        precioVenta: { type: Number, default: 0 },
+        observInt: { type: String, default: "" },
+      },
+    ],
+
+    // ===== Venta al Cliente (cierre) =====
+    ventaCliente: [
+      {
+        cant: { type: Number, default: 0 },
+        concepto: { type: String, default: "" },
+        precioVenta: { type: Number, default: 0 },
+        observaciones: { type: String, default: "" },
+      },
+    ],
+
+
+
+    // ===== Mano de Obra =====
+manoObra: [
+  {
+    concepto: { type: String, default: "" },
+    mecanico: { type: String, default: "" },
+    horas: { type: Number, default: 0 },
+    fechaPago: { type: String, default: "" }, // o Date si quieres
+    observaciones: { type: String, default: "" },
+  },
+],
+
+// ===== Observaciones finales =====
+observacionesExternas: { type: String, default: "" },
+observacionesInternas: { type: String, default: "" },
   },
   {
     timestamps: true, // createdAt, updatedAt

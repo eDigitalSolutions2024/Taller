@@ -177,6 +177,60 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
 
 
 
+// PUT /api/vehiculos/:id/presupuesto-venta
+router.put('/:id/presupuesto-venta', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      presupuesto,
+      ventaCliente,
+      manoObra,
+      observacionesExternas,
+      observacionesInternas,
+      estadoOrden,
+    } = req.body;
+
+    const vehiculo = await Vehiculo.findById(id);
+    if (!vehiculo) {
+      return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
+    }
+
+    if (Array.isArray(presupuesto)) {
+      vehiculo.presupuesto = presupuesto;
+    }
+
+    if (Array.isArray(ventaCliente)) {
+      vehiculo.ventaCliente = ventaCliente;
+    }
+
+    if (Array.isArray(manoObra)) {
+      vehiculo.manoObra = manoObra;
+    }
+
+    if (typeof observacionesExternas === 'string') {
+      vehiculo.observacionesExternas = observacionesExternas;
+    }
+
+    if (typeof observacionesInternas === 'string') {
+      vehiculo.observacionesInternas = observacionesInternas;
+    }
+
+    if (estadoOrden) {
+      vehiculo.estadoOrden = estadoOrden;
+    }
+
+    await vehiculo.save();
+
+    return res.json({ ok: true, vehiculo });
+  } catch (err) {
+    console.error('Error guardando presupuesto/venta/manoObra:', err);
+    return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
+  }
+});
+
+
+
+
 // GET /api/vehiculos/:id  -> detalle de una orden
 router.get('/:id', async (req, res) => {
   try {
@@ -226,6 +280,34 @@ router.get('/:id/orden-pdf', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error al generar PDF orden' });
   }
 });
+
+
+// PUT /api/vehiculos/:id/cerrar  -> cerrar orden de servicio
+router.put('/:id/cerrar', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const vehiculo = await Vehiculo.findById(id);
+    if (!vehiculo) {
+      return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
+    }
+
+    // marcar como cerrada
+    vehiculo.estadoOrden = 'CERRADA';
+
+    // si quieres guardar fecha de cierre, puedes agregar el campo en el schema
+    // y descomentar esto:
+    // vehiculo.fechaCierre = new Date();
+
+    await vehiculo.save();
+
+    return res.json({ ok: true, vehiculo });
+  } catch (err) {
+    console.error('Error cerrando orden:', err);
+    return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
+  }
+});
+
 
 
 

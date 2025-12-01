@@ -26,6 +26,14 @@ export const updateServicioReparacion = (id, servicioReparacion) =>
 export const saveRequisicionDiagnostico = (id, payload) =>
   http.put(`/vehiculos/${id}/requisicion-diagnostico`, payload);
 
+
+
+// 🔹 NUEVO: guardar presupuesto + venta al cliente
+export const savePresupuestoVenta = (id, payload) =>
+  http.put(`/vehiculos/${id}/presupuesto-venta`, payload);
+
+
+
 // 👇 nuevo ayudante
 export const openOperativoPdf = (id) => {
   const url = `${API}/vehiculos/${id}/operativo-pdf`;
@@ -37,3 +45,7 @@ export const openImprimirPdf = (id) => {
   const url = `${API}/vehiculos/${id}/orden-pdf`;
   window.open(url, "_blank", "noopener");
 };
+
+// Cerrar orden
+export const closeOrden = (id) =>
+  http.put(`/vehiculos/${id}/cerrar`);
