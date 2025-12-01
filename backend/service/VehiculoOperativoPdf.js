@@ -4,9 +4,9 @@
 const puppeteer = require('puppeteer');
 const dayjs = require('dayjs');
 
-// Colores acordes a tu sistema (azules tipo Tailwind)
-const PRIMARY = '#2563EB';      // azul principal (tabs / botones)
-const PRIMARY_DARK = '#1D4ED8'; // azul un poquito más oscuro
+// Colores acordes a tu sistema (mismos que vehiculoOrdenPdf)
+const PRIMARY = '#2563EB';
+const PRIMARY_DARK = '#1D4ED8';
 const PRIMARY_TEXT = '#FFFFFF';
 
 // ---------- HELPERS DE FORMATO ----------
@@ -64,7 +64,16 @@ function fmtDireccionFull(v, extra = {}) {
   return String(v);
 }
 
-// ---------- HTML DEL PDF ----------
+// Construye una lista HTML <ul> a partir de un arreglo de textos
+function buildList(items = []) {
+  const clean = items.filter(Boolean);
+  if (!clean.length) return '&nbsp;';
+  return `<ul style="margin:0; padding-left:14px;">${clean
+    .map((t) => `<li>${esc(t)}</li>`)
+    .join('')}</ul>`;
+}
+
+// ---------- HTML DEL PDF OPERATIVO ----------
 
 function buildOperativoHtml(vehiculo) {
   const {
@@ -98,7 +107,28 @@ function buildOperativoHtml(vehiculo) {
     aceite,
     alternador,
     observaciones,
+    indicadoresTablero,
+    otros,
+    diagnosticoTecnico,
   } = vehiculo;
+
+  // mismo objeto que usas en vehiculoOrdenPdf
+  const servicioReparacion = vehiculo.servicioReparacion || {};
+  const {
+    alineacionComputadora,
+    balanceoPorRueda,
+    rotacion,
+    instalacionAmortiguadorNormal,
+    instalacionAmortiguadorEspecial,
+    montajeLlantaAutocamioneta,
+    limpiezaAjusteFrenosAutocamioneta,
+    frenos2RuedasAutocamioneta,
+    cambioBrazo,
+    cambioTerminalDireccion,
+    cambioRotula,
+    infoLlantas,
+    revisionFallas,
+  } = servicioReparacion;
 
   const fechaRecepcion = fmtFecha(vehiculo.fechaRecepcion);
   const horaRecepcion =
@@ -112,16 +142,46 @@ function buildOperativoHtml(vehiculo) {
     estado,
   });
 
-  // Por ahora está fijo, luego podemos leerlo de servicioReparacion
-  const serviciosTexto = `
-    ALINEACIÓN POR COMPUTADORA<br/>
-    BALANCEO EN LAS 4 RUEDAS<br/>
-    MONTAJE DE LLANTA<br/>
-    LIMPIEZA Y AJUSTE FRENOS<br/>
-    REVISIÓN FRENOS 2 RUEDAS<br/>
-    CAMBIO DE BRAZO
-  `;
+  // --- Servicios dinámicos (igual que en vehiculoOrdenPdf) ---
+  const serviciosMotor = [
+    cambioBrazo && 'Cambio de brazo',
+    cambioTerminalDireccion && 'Cambio de terminal de dirección',
+    cambioRotula && 'Cambio de rótula',
+    instalacionAmortiguadorNormal && 'Instalación amortiguador (normal)',
+    instalacionAmortiguadorEspecial &&
+      'Instalación amortiguador (especial)',
+  ];
 
+  const serviciosLubricacion = [
+    // Aquí podrías agregar servicios de lubricación si los manejas
+  ];
+
+  const serviciosRevision = [
+    alineacionComputadora && 'Alineación por computadora',
+    balanceoPorRueda && 'Balanceo por rueda',
+    rotacion && 'Rotación de llantas',
+  ];
+
+  const serviciosOtros = [
+    montajeLlantaAutocamioneta && 'Montaje llanta auto/camioneta',
+    limpiezaAjusteFrenosAutocamioneta &&
+      'Limpieza y ajuste de frenos auto/camioneta',
+    frenos2RuedasAutocamioneta && 'Revisión / reparación frenos 2 ruedas',
+  ];
+
+  const serviciosMotorHtml = buildList(serviciosMotor);
+  const serviciosLubricacionHtml = buildList(serviciosLubricacion);
+  const serviciosRevisionHtml = buildList(serviciosRevision);
+  const serviciosOtrosHtml = buildList(serviciosOtros);
+
+  // --- Texto de fallas reportadas y llantas ---
+  const fallasCliente = diagnosticoTecnico || revisionFallas || '';
+  const textoLlantas = infoLlantas || '';
+
+  // --- Otros / comentarios generales ---
+  const textoOtros = indicadoresTablero || otros || '';
+
+  // HTML
   return `
 <!DOCTYPE html>
 <html lang="es">
@@ -217,10 +277,14 @@ function buildOperativoHtml(vehiculo) {
     padding: 1px 0;
   }
 
-  .obs-cell { height: 40px; }
   .medium-cell { height: 60px; }
   .large-cell { height: 80px; }
 
+  .footer-page {
+    font-size: 8px;
+    text-align: center;
+    margin-top: 4px;
+  }
 </style>
 </head>
 <body>
@@ -228,7 +292,7 @@ function buildOperativoHtml(vehiculo) {
 <!-- =================== PÁGINA 1 =================== -->
 <div class="page page-break">
 
-  <!-- ENCABEZADO con estilo del sistema -->
+  <!-- ENCABEZADO -->
   <table class="no-border">
     <tr>
       <td style="width: 25mm; vertical-align: top;">
@@ -248,7 +312,7 @@ function buildOperativoHtml(vehiculo) {
     </tr>
   </table>
 
-  <!-- DATOS DEL CLIENTE / ORDEN -->
+  <!-- DATOS DEL CLIENTE -->
   <table style="margin-top: 4px;">
     <tr>
       <td class="grey-header" style="width: 23%;">NOMBRE DEL CLIENTE:</td>
@@ -268,7 +332,7 @@ function buildOperativoHtml(vehiculo) {
       <td class="grey-header">RFC:</td>
       <td>${esc(rfc)}</td>
       <td class="grey-header">TELÉFONO</td>
-      <td>${esc(telefonoFijo)}</td>
+      <td>${esc(telefonoFijo || celular || '')}</td>
     </tr>
     <tr>
       <td class="grey-header">DIRECCIÓN:</td>
@@ -276,17 +340,17 @@ function buildOperativoHtml(vehiculo) {
     </tr>
   </table>
 
-  <!-- DATOS DE LA UNIDAD -->
+  <!-- DATOS DEL VEHÍCULO -->
   <table>
     <tr>
-      <td class="grey-header" style="width: 12%;">MARCA</td>
-      <td style="width: 13%;">${esc(marca)}</td>
-      <td class="grey-header" style="width: 12%;">MODELO</td>
-      <td style="width: 13%;">${esc(modelo)}</td>
-      <td class="grey-header" style="width: 12%;">AÑO</td>
-      <td style="width: 13%;">${esc(anio)}</td>
-      <td class="grey-header" style="width: 12%;">COLOR</td>
-      <td style="width: 13%;">${esc(color)}</td>
+      <td class="grey-header" style="width:12%;">MARCA</td>
+      <td style="width:13%;">${esc(marca)}</td>
+      <td class="grey-header" style="width:12%;">MODELO</td>
+      <td style="width:13%;">${esc(modelo)}</td>
+      <td class="grey-header" style="width:12%;">AÑO</td>
+      <td style="width:13%;">${esc(anio)}</td>
+      <td class="grey-header" style="width:12%;">COLOR</td>
+      <td style="width:13%;">${esc(color)}</td>
     </tr>
     <tr>
       <td class="grey-header">PLACAS</td>
@@ -332,55 +396,72 @@ function buildOperativoHtml(vehiculo) {
   <!-- OTROS -->
   <div class="section-title" style="margin-top: 3px;">OTROS</div>
   <table>
-    <tr><td class="medium-cell">&nbsp;</td></tr>
+    <tr>
+      <td class="medium-cell">
+        ${esc(textoOtros) || '&nbsp;'}
+      </td>
+    </tr>
   </table>
 
-  <!-- SERVICIO -->
+  <!-- SERVICIO (MISMO FORMATO QUE vehiculoOrdenPdf) -->
   <div class="section-title" style="margin-top: 3px;">S E R V I C I O</div>
-  <div class="sub-title">MANTENIMIENTO</div>
+  <div class="sub-title">DETALLE DE SERVICIOS SOLICITADOS</div>
   <table>
     <tr>
-      <th class="center" style="width:25%;">MOTOR</th>
+      <th class="center" style="width:25%;">MOTOR / SUSPENSIÓN</th>
       <th class="center" style="width:25%;">LUBRICACIÓN</th>
-      <th class="center" style="width:25%;">REVISIÓN</th>
+      <th class="center" style="width:25%;">REVISIÓN / AJUSTES</th>
       <th class="center" style="width:25%;">OTROS SERVICIOS</th>
     </tr>
     <tr>
-      <td class="large-cell"></td>
-      <td class="large-cell"></td>
-      <td class="large-cell"></td>
-      <td class="large-cell">${serviciosTexto}</td>
+      <td class="large-cell">${serviciosMotorHtml}</td>
+      <td class="large-cell">${serviciosLubricacionHtml}</td>
+      <td class="large-cell">${serviciosRevisionHtml}</td>
+      <td class="large-cell">${serviciosOtrosHtml}</td>
     </tr>
   </table>
 
   <!-- FALLAS REPORTADAS -->
   <div class="section-title" style="margin-top: 3px;">FALLAS REPORTADAS POR EL CLIENTE</div>
   <table>
-    <tr><td class="medium-cell">&nbsp;</td></tr>
+    <tr>
+      <td class="medium-cell">
+        ${esc(fallasCliente) || '&nbsp;'}
+      </td>
+    </tr>
   </table>
 
-  <!-- INFORMACIÓN LLANTAS -->
+  <!-- INFORMACIÓN DE LLANTAS -->
   <div class="section-title" style="margin-top: 3px;">INFORMACIÓN DE LLANTAS</div>
   <table>
-    <tr><td class="medium-cell">&nbsp;</td></tr>
+    <tr>
+      <td class="medium-cell">
+        ${esc(textoLlantas) || '&nbsp;'}
+      </td>
+    </tr>
   </table>
 
   <!-- OBSERVACIONES -->
   <div class="section-title" style="margin-top: 3px;">OBSERVACIONES</div>
   <table>
-    <tr><td class="medium-cell">${esc(observaciones)}</td></tr>
+    <tr>
+      <td class="medium-cell">
+        ${esc(observaciones) || '&nbsp;'}
+      </td>
+    </tr>
   </table>
 
+  <div class="footer-page">Página 1 - 2</div>
 </div>
 
 <!-- =================== PÁGINA 2 =================== -->
 <div class="page">
 
   <div class="small center" style="margin-bottom: 4px; color:${PRIMARY_DARK}; font-weight:bold;">
-    AUTOSERVICIO D Y G - ORDEN DE SERVICIO ${esc(ordenServicio)}
+    AUTOSERVICIO D Y G - ORDEN OPERATIVA ${esc(ordenServicio)}
   </div>
 
-  <!-- Diagnóstico del técnico -->
+  <!-- DIAGNÓSTICO DEL TÉCNICO -->
   <div class="section-title">DIAGNÓSTICO DEL TÉCNICO</div>
   <table>
     <tr>
@@ -388,7 +469,7 @@ function buildOperativoHtml(vehiculo) {
     </tr>
   </table>
 
-  <!-- Refacciones solicitadas -->
+  <!-- REFACCIONES SOLICITADAS -->
   <div class="section-title" style="margin-top: 3px;">TÉCNICO "REFACCIONES SOLICITADAS"</div>
   <table>
     <tr>
@@ -399,7 +480,7 @@ function buildOperativoHtml(vehiculo) {
     </tr>
     ${
       (vehiculo.refaccionesSolicitadas || [])
-        .map(r => `
+        .map((r) => `
           <tr>
             <td class="center">${fmtFecha(
               r.fechaSolicitud || vehiculo.fechaRecepcion
@@ -411,12 +492,16 @@ function buildOperativoHtml(vehiculo) {
         `)
         .join('')
     }
-    ${Array.from({ length: 10 }).map(() => `
+    ${Array.from({ length: 10 })
+      .map(
+        () => `
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
-    `).join('')}
+    `
+      )
+      .join('')}
   </table>
 
-  <!-- Diagnóstico de calidad -->
+  <!-- DIAGNÓSTICO DE CALIDAD -->
   <div class="section-title" style="margin-top: 6px;">DIAGNÓSTICO DE CALIDAD</div>
   <table>
     <tr>
@@ -437,6 +522,7 @@ function buildOperativoHtml(vehiculo) {
     </tr>
   </table>
 
+  <div class="footer-page">Página 2 - 2</div>
 </div>
 
 </body>

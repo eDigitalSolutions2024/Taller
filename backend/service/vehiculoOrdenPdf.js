@@ -64,6 +64,15 @@ function fmtDireccionFull(v, extra = {}) {
   return String(v);
 }
 
+// Construye una lista HTML <ul> a partir de un arreglo de textos
+function buildList(items = []) {
+  const clean = items.filter(Boolean);
+  if (!clean.length) return '&nbsp;';
+  return `<ul style="margin:0; padding-left:14px;">${clean
+    .map((t) => `<li>${esc(t)}</li>`)
+    .join('')}</ul>`;
+}
+
 // ---------- HTML DEL PDF "IMPRIMIR" ----------
 
 function buildOrdenHtml(vehiculo) {
@@ -98,7 +107,27 @@ function buildOrdenHtml(vehiculo) {
     aceite,
     alternador,
     observaciones,
+    indicadoresTablero,
+    otros,
+    diagnosticoTecnico,
   } = vehiculo;
+
+  const servicioReparacion = vehiculo.servicioReparacion || {};
+  const {
+    alineacionComputadora,
+    balanceoPorRueda,
+    rotacion,
+    instalacionAmortiguadorNormal,
+    instalacionAmortiguadorEspecial,
+    montajeLlantaAutocamioneta,
+    limpiezaAjusteFrenosAutocamioneta,
+    frenos2RuedasAutocamioneta,
+    cambioBrazo,
+    cambioTerminalDireccion,
+    cambioRotula,
+    infoLlantas,
+    revisionFallas,
+  } = servicioReparacion;
 
   const fechaRecepcion = fmtFecha(vehiculo.fechaRecepcion);
   const horaRecepcion =
@@ -112,7 +141,7 @@ function buildOrdenHtml(vehiculo) {
     estado,
   });
 
-  // Texto largo de "Condiciones de servicio" (puedes reemplazarlo por el de tu sistema viejo)
+  // Texto largo de "Condiciones de servicio" (se mantiene como contrato)
   const condicionesCortas = `
     ACEPTO QUE MI CASO REQUIERE COMUNICARME PARA PRUEBA Y REPROGRAMACIÓN DE MI VEHÍCULO. 
     QUEDA BAJO MI RESPONSABILIDAD CUALQUIER OBJETO QUE PERMANEZCA EN EL VEHÍCULO. 
@@ -131,6 +160,45 @@ function buildOrdenHtml(vehiculo) {
     9. El Distribuidor entregará la factura o comprobante correspondiente por el importe total de la operación efectuada.<br/>
     10. En todo lo no previsto en estas cláusulas, se estará a lo dispuesto por la legislación aplicable en materia de protección al consumidor y servicios automotrices.
   `;
+
+  // --- Servicios dinámicos (sin texto predeterminado) ---
+  const serviciosMotor = [
+    cambioBrazo && 'Cambio de brazo',
+    cambioTerminalDireccion && 'Cambio de terminal de dirección',
+    cambioRotula && 'Cambio de rótula',
+    instalacionAmortiguadorNormal && 'Instalación amortiguador (normal)',
+    instalacionAmortiguadorEspecial &&
+      'Instalación amortiguador (especial)',
+  ];
+
+  const serviciosLubricacion = [
+    // aquí podrías agregar servicios de lubricación si los manejas
+  ];
+
+  const serviciosRevision = [
+    alineacionComputadora && 'Alineación por computadora',
+    balanceoPorRueda && 'Balanceo por rueda',
+    rotacion && 'Rotación de llantas',
+  ];
+
+  const serviciosOtros = [
+    montajeLlantaAutocamioneta && 'Montaje llanta auto/camioneta',
+    limpiezaAjusteFrenosAutocamioneta &&
+      'Limpieza y ajuste de frenos auto/camioneta',
+    frenos2RuedasAutocamioneta && 'Frenos 2 ruedas auto/camioneta',
+  ];
+
+  const serviciosMotorHtml = buildList(serviciosMotor);
+  const serviciosLubricacionHtml = buildList(serviciosLubricacion);
+  const serviciosRevisionHtml = buildList(serviciosRevision);
+  const serviciosOtrosHtml = buildList(serviciosOtros);
+
+  // --- Texto de fallas reportadas y llantas ---
+  const fallasCliente = diagnosticoTecnico || revisionFallas || '';
+  const textoLlantas = infoLlantas || '';
+
+  // --- Otros / comentarios generales ---
+  const textoOtros = indicadoresTablero || otros || observaciones || '';
 
   return `
 <!DOCTYPE html>
@@ -285,7 +353,7 @@ function buildOrdenHtml(vehiculo) {
       <td class="grey-header">RFC:</td>
       <td>${esc(rfc)}</td>
       <td class="grey-header">TELÉFONO</td>
-      <td>${esc(telefonoFijo)}</td>
+      <td>${esc(telefonoFijo || celular || '')}</td>
     </tr>
     <tr>
       <td class="grey-header">DIRECCIÓN:</td>
@@ -348,33 +416,51 @@ function buildOrdenHtml(vehiculo) {
 
   <!-- Otros -->
   <div class="section-title" style="margin-top:3px;">OTROS</div>
-  <table><tr><td class="medium-cell">&nbsp;</td></tr></table>
-
-  <!-- Servicio (puedes luego inyectar servicios reales) -->
-  <div class="section-title" style="margin-top:3px;">S E R V I C I O</div>
-  <div class="sub-title">MANTENIMIENTO</div>
   <table>
     <tr>
-      <th class="center" style="width:25%;">MOTOR</th>
+      <td class="medium-cell">
+        ${esc(textoOtros) || '&nbsp;'}
+      </td>
+    </tr>
+  </table>
+
+  <!-- Servicio (info real de la orden, sin texto predeterminado fijo) -->
+  <div class="section-title" style="margin-top:3px;">S E R V I C I O</div>
+  <div class="sub-title">DETALLE DE SERVICIOS SOLICITADOS</div>
+  <table>
+    <tr>
+      <th class="center" style="width:25%;">MOTOR / SUSPENSIÓN</th>
       <th class="center" style="width:25%;">LUBRICACIÓN</th>
-      <th class="center" style="width:25%;">REVISIÓN</th>
+      <th class="center" style="width:25%;">REVISIÓN / AJUSTES</th>
       <th class="center" style="width:25%;">OTROS SERVICIOS</th>
     </tr>
     <tr>
-      <td class="large-cell"></td>
-      <td class="large-cell"></td>
-      <td class="large-cell"></td>
-      <td class="large-cell">ALINEACIÓN POR COMPUTADORA</td>
+      <td class="large-cell">${serviciosMotorHtml}</td>
+      <td class="large-cell">${serviciosLubricacionHtml}</td>
+      <td class="large-cell">${serviciosRevisionHtml}</td>
+      <td class="large-cell">${serviciosOtrosHtml}</td>
     </tr>
   </table>
 
   <!-- Fallas -->
   <div class="section-title" style="margin-top:3px;">FALLAS REPORTADAS POR EL CLIENTE</div>
-  <table><tr><td class="medium-cell">&nbsp;</td></tr></table>
+  <table>
+    <tr>
+      <td class="medium-cell">
+        ${esc(fallasCliente) || '&nbsp;'}
+      </td>
+    </tr>
+  </table>
 
   <!-- Llantas -->
   <div class="section-title" style="margin-top:3px;">INFORMACIÓN DE LLANTAS</div>
-  <table><tr><td class="medium-cell">&nbsp;</td></tr></table>
+  <table>
+    <tr>
+      <td class="medium-cell">
+        ${esc(textoLlantas) || '&nbsp;'}
+      </td>
+    </tr>
+  </table>
 
   <!-- Condiciones de servicio (resumen) -->
   <div class="section-title" style="margin-top:3px;">CONDICIONES DE SERVICIO</div>
