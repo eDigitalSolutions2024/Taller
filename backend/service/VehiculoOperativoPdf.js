@@ -1,8 +1,9 @@
-// backend/services/vehiculoOperativoPdf.js
+// backend/service/vehiculoOperativoPdf.js
 // Genera el PDF "Operativo" de la orden usando Puppeteer
 
 const puppeteer = require('puppeteer');
 const dayjs = require('dayjs');
+const Codigo = require('../models/CodigoRefaccion'); // 👈 servicios / refacciones
 
 // Colores acordes a tu sistema (mismos que vehiculoOrdenPdf)
 const PRIMARY = '#2563EB';
@@ -75,7 +76,7 @@ function buildList(items = []) {
 
 // ---------- HTML DEL PDF OPERATIVO ----------
 
-function buildOperativoHtml(vehiculo) {
+function buildOperativoHtml(vehiculo, serviciosDocs = []) {
   const {
     ordenServicio,
     nombreGobierno,
@@ -112,23 +113,10 @@ function buildOperativoHtml(vehiculo) {
     diagnosticoTecnico,
   } = vehiculo;
 
-  // mismo objeto que usas en vehiculoOrdenPdf
+  // Objeto actual de servicioReparacion (nuevo formato con serviciosSeleccionados)
   const servicioReparacion = vehiculo.servicioReparacion || {};
-  const {
-    alineacionComputadora,
-    balanceoPorRueda,
-    rotacion,
-    instalacionAmortiguadorNormal,
-    instalacionAmortiguadorEspecial,
-    montajeLlantaAutocamioneta,
-    limpiezaAjusteFrenosAutocamioneta,
-    frenos2RuedasAutocamioneta,
-    cambioBrazo,
-    cambioTerminalDireccion,
-    cambioRotula,
-    infoLlantas,
-    revisionFallas,
-  } = servicioReparacion;
+  const infoLlantas = servicioReparacion.infoLlantas || '';
+  const revisionFallas = servicioReparacion.revisionFallas || '';
 
   const fechaRecepcion = fmtFecha(vehiculo.fechaRecepcion);
   const horaRecepcion =
@@ -142,32 +130,22 @@ function buildOperativoHtml(vehiculo) {
     estado,
   });
 
-  // --- Servicios dinámicos (igual que en vehiculoOrdenPdf) ---
-  const serviciosMotor = [
-    cambioBrazo && 'Cambio de brazo',
-    cambioTerminalDireccion && 'Cambio de terminal de dirección',
-    cambioRotula && 'Cambio de rótula',
-    instalacionAmortiguadorNormal && 'Instalación amortiguador (normal)',
-    instalacionAmortiguadorEspecial &&
-      'Instalación amortiguador (especial)',
-  ];
+  // --- Servicios dinámicos desde la BD ---
+  // serviciosDocs viene de Mongo: [{codigo, descripcion, grupoServicio, ...}]
+  const serviciosMotor = [];
+  const serviciosLubricacion = [];
+  const serviciosRevision = [];
+  const serviciosOtros = [];
 
-  const serviciosLubricacion = [
-    // Aquí podrías agregar servicios de lubricación si los manejas
-  ];
+  for (const s of serviciosDocs) {
+    const label = `${s.codigo} - ${s.descripcion || ''}`.trim();
+    const grupo = s.grupoServicio || 'otros'; // si no tienes ese campo, todo cae en "otros"
 
-  const serviciosRevision = [
-    alineacionComputadora && 'Alineación por computadora',
-    balanceoPorRueda && 'Balanceo por rueda',
-    rotacion && 'Rotación de llantas',
-  ];
-
-  const serviciosOtros = [
-    montajeLlantaAutocamioneta && 'Montaje llanta auto/camioneta',
-    limpiezaAjusteFrenosAutocamioneta &&
-      'Limpieza y ajuste de frenos auto/camioneta',
-    frenos2RuedasAutocamioneta && 'Revisión / reparación frenos 2 ruedas',
-  ];
+    if (grupo === 'motor') serviciosMotor.push(label);
+    else if (grupo === 'lubricacion') serviciosLubricacion.push(label);
+    else if (grupo === 'revision') serviciosRevision.push(label);
+    else serviciosOtros.push(label);
+  }
 
   const serviciosMotorHtml = buildList(serviciosMotor);
   const serviciosLubricacionHtml = buildList(serviciosLubricacion);
@@ -403,7 +381,7 @@ function buildOperativoHtml(vehiculo) {
     </tr>
   </table>
 
-  <!-- SERVICIO (MISMO FORMATO QUE vehiculoOrdenPdf) -->
+  <!-- SERVICIO (DINÁMICO DESDE BD) -->
   <div class="section-title" style="margin-top: 3px;">S E R V I C I O</div>
   <div class="sub-title">DETALLE DE SERVICIOS SOLICITADOS</div>
   <table>
@@ -533,7 +511,19 @@ function buildOperativoHtml(vehiculo) {
 // ---------- FUNCIÓN PRINCIPAL PARA STREAM ----------
 
 async function streamVehiculoOperativoPdf(res, vehiculo) {
-  const html = buildOperativoHtml(vehiculo);
+  const servicioReparacion = vehiculo.servicioReparacion || {};
+  const codigosSel = servicioReparacion.serviciosSeleccionados || [];
+
+  // Solo los servicios que marcaste en la pantalla
+  let serviciosDocs = [];
+  if (codigosSel.length) {
+    serviciosDocs = await Codigo.find({
+      tipo: 'servicio',
+      codigo: { $in: codigosSel },
+    }).lean();
+  }
+
+  const html = buildOperativoHtml(vehiculo, serviciosDocs);
 
   const browser = await puppeteer.launch({
     headless: 'new',

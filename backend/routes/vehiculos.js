@@ -1,9 +1,49 @@
 // backend/routes/vehiculos.js
 const express = require('express');
 const router = express.Router();
+
 const Vehiculo = require('../models/Vehiculo');
+const OrdenCompra = require('../models/OrdenCompra');              // 👈 NUEVO
+const { proteger, requiereRol } = require('../middleware/auth');   // 👈 NUEVO
+
 const { streamVehiculoOperativoPdf } = require('../service/VehiculoOperativoPdf');
 const { streamVehiculoOrdenPdf } = require('../service/vehiculoOrdenPdf');
+
+
+// 👇 Helper para generar folio de OC
+function generarNumeroOC() {
+  const ahora = new Date();
+  const yyyy = ahora.getFullYear();
+  const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dd = String(ahora.getDate()).padStart(2, '0');
+  const hh = String(ahora.getHours()).padStart(2, '0');
+  const mi = String(ahora.getMinutes() + 1).padStart(2, '0');
+  const ss = String(ahora.getSeconds()).padStart(2, '0');
+  // Ejemplo: OC-20241208-143015
+  return `OC-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+}
+
+// 👇 Helper para generar número de Orden de Servicio
+async function generarOrdenServicio() {
+  // Buscamos el último vehículo creado (por fecha de creación)
+  const ultimo = await Vehiculo.findOne()
+    .sort({ createdAt: -1 })
+    .lean();
+
+  let nextNum = 1;
+
+  if (ultimo?.ordenServicio) {
+    // Tomamos la parte numérica al final (ej: OS-00012 -> 12)
+    const match = String(ultimo.ordenServicio).match(/(\d+)$/);
+    if (match) {
+      nextNum = Number(match[1]) + 1;
+    }
+  }
+
+  // Formato: OS-00001, OS-00002, etc.
+  return `OS-${String(nextNum).padStart(5, '0')}`;
+}
+
 
 // POST /api/vehiculos  -> registrar nuevo vehículo para un cliente
 router.post('/', async (req, res) => {
@@ -16,10 +56,18 @@ router.post('/', async (req, res) => {
         .json({ ok: false, msg: 'clienteId es obligatorio' });
     }
 
-    const vehiculo = new Vehiculo({
+    // armamos el payload base
+    const payload = {
       cliente: clienteId,
       ...data,
-    });
+    };
+
+    // 👇 Si no viene ordenServicio desde el frontend, la generamos aquí
+    if (!payload.ordenServicio) {
+      payload.ordenServicio = await generarOrdenServicio();
+    }
+
+    const vehiculo = new Vehiculo(payload);
 
     await vehiculo.save();
 
@@ -43,7 +91,6 @@ router.get('/cliente/:clienteId', async (req, res) => {
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
   }
 });
-
 
 // GET /api/vehiculos/ordenes?estado=PENDIENTE_CAPTURA&searchOs=&search=&page=1&limit=10
 router.get('/ordenes', async (req, res) => {
@@ -70,7 +117,7 @@ router.get('/ordenes', async (req, res) => {
     // Búsqueda general (cliente, placas, marca/modelo, etc.)
     if (search) {
       q.$or = [
-        { nombreGobierno: { $regex: search, $options: 'i' } }, // cliente
+        { nombreGobierno: { $regex: search, $options: 'i' } }, // cliente (para gobierno)
         { placas: { $regex: search, $options: 'i' } },
         { marca: { $regex: search, $options: 'i' } },
         { modelo: { $regex: search, $options: 'i' } },
@@ -102,7 +149,6 @@ router.get('/ordenes', async (req, res) => {
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
   }
 });
-
 
 // PUT /api/vehiculos/:id/servicio  -> guarda servicio/reparación e inicia la orden
 router.put('/:id/servicio', async (req, res) => {
@@ -153,6 +199,7 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
 
     // Refacciones solicitadas (las que ves en la tabla)
     if (Array.isArray(refacciones)) {
+      // Aquí ya pueden venir requiereOC, ocGenerada, numeroOC, etc.
       vehiculo.refaccionesSolicitadas = refacciones;
     }
 
@@ -174,8 +221,6 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
   }
 });
-
-
 
 // PUT /api/vehiculos/:id/presupuesto-venta
 router.put('/:id/presupuesto-venta', async (req, res) => {
@@ -228,8 +273,115 @@ router.put('/:id/presupuesto-venta', async (req, res) => {
   }
 });
 
+// 💥 Generar Orden de Compra para una refacción
+// POST /api/vehiculos/:id/orden-compra
+router.post(
+  '/:id/orden-compra',
+  proteger,
+  requiereRol('jefe', 'admin', 'contabilidad'),   // ajusta si quieres
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { refaccion } = req.body; // la fila que manda el front
 
+      if (!refaccion) {
+        return res
+          .status(400)
+          .json({ ok: false, mensaje: 'Falta la refacción en el body.' });
+      }
 
+      const vehiculo = await Vehiculo.findById(id);
+      if (!vehiculo) {
+        return res
+          .status(404)
+          .json({ ok: false, mensaje: 'Orden / vehículo no encontrado.' });
+      }
+
+      // Buscar una línea compatible dentro de refaccionesSolicitadas
+      const idx = (vehiculo.refaccionesSolicitadas || []).findIndex((r) => {
+        return (
+          String(r.refaccion || '') === String(refaccion.refaccion || '') &&
+          String(r.codigo || '') === String(refaccion.codigo || '') &&
+          Number(r.cant || 0) === Number(refaccion.cant || 0) &&
+          Number(r.precioUnitario || 0) ===
+            Number(refaccion.precioUnitario || 0)
+        );
+      });
+
+      if (idx === -1) {
+        return res.status(404).json({
+          ok: false,
+          mensaje:
+            'No se encontró la refacción en la orden. Revisa que coincidan cantidad/código.',
+        });
+      }
+
+      const linea = vehiculo.refaccionesSolicitadas[idx];
+
+      if (linea.ocGenerada) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: 'Esta refacción ya tiene una orden de compra.',
+        });
+      }
+
+      if (linea.estatus !== 'APROBADA') {
+        return res.status(400).json({
+          ok: false,
+          mensaje:
+            'Solo se puede generar orden de compra para refacciones APROBADAS.',
+        });
+      }
+
+      // Crear número de OC
+      const numeroOC = generarNumeroOC();
+
+      // Crear OrdenCompra
+      const oc = await OrdenCompra.create({
+        numero: numeroOC,
+        orden: vehiculo._id,
+        proveedor: linea.proveedor || refaccion.proveedor || '',
+        lineas: [
+          {
+            cant: linea.cant,
+            unidad: linea.unidad,
+            refaccion: linea.refaccion,
+            tipo: linea.tipo,
+            marca: linea.marca,
+            proveedor: linea.proveedor,
+            codigo: linea.codigo,
+            precioUnitario: linea.precioUnitario,
+            importeTotal: linea.importeTotal,
+            moneda: linea.moneda || 'MN',
+            observaciones: linea.observaciones,
+          },
+        ],
+        estatus: 'PENDIENTE',
+        creadoPor: req.user?._id,
+      });
+
+      // Actualizar línea dentro de la orden de servicio
+      linea.requiereOC = true;
+      linea.ocGenerada = true;
+      linea.numeroOC = numeroOC;
+      linea.ordenCompra = oc._id;
+
+      await vehiculo.save();
+
+      return res.json({
+        ok: true,
+        numeroOC: oc.numero,
+        ordenCompraId: oc._id,
+      });
+    } catch (err) {
+      console.error('Error generando orden de compra:', err);
+      return res.status(500).json({
+        ok: false,
+        mensaje: 'Error al generar la orden de compra',
+      });
+    }
+  }
+);
 
 // GET /api/vehiculos/:id  -> detalle de una orden
 router.get('/:id', async (req, res) => {
@@ -244,7 +396,6 @@ router.get('/:id', async (req, res) => {
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
   }
 });
-
 
 // GET /api/vehiculos/:id/operativo-pdf
 router.get('/:id/operativo-pdf', async (req, res) => {
@@ -281,7 +432,6 @@ router.get('/:id/orden-pdf', async (req, res) => {
   }
 });
 
-
 // PUT /api/vehiculos/:id/cerrar  -> cerrar orden de servicio
 router.put('/:id/cerrar', async (req, res) => {
   try {
@@ -307,8 +457,5 @@ router.put('/:id/cerrar', async (req, res) => {
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
   }
 });
-
-
-
 
 module.exports = router;

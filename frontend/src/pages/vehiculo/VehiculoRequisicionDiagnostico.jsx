@@ -1,11 +1,15 @@
 // src/pages/vehiculo/VehiculoRequisicionDiagnostico.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { saveRequisicionDiagnostico } from "../../api/vehiculos";
+import {
+  saveRequisicionDiagnostico,
+  generarOrdenCompra,
+} from "../../api/vehiculos";
+import http from "../../api/http"; // 👈 para descargar el PDF de la OC
 
 export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
   const [diagnostico, setDiagnostico] = useState("");
-  const [rows, setRows] = useState([]);          // refaccionesSolicitadas
-  const [cargos, setCargos] = useState([]);      // 👈 NUEVO: cargosEnOrden
+  const [rows, setRows] = useState([]); // refaccionesSolicitadas
+  const [cargos, setCargos] = useState([]); // cargosEnOrden
   const [line, setLine] = useState({
     cant: "",
     unidad: "",
@@ -31,13 +35,16 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
 
     // Refacciones solicitadas (arriba)
     const refConEstatus = (orden.refaccionesSolicitadas || []).map((r) => ({
-      estatus: "PENDIENTE",
       ...r,
       estatus: r.estatus || "PENDIENTE",
+      requiereOC: !!r.requiereOC,
+      ocGenerada: !!r.ocGenerada,
+      numeroOC: r.numeroOC || null,
+      ordenCompra: r.ordenCompra || null, // 👈 ID de la OC
     }));
     setRows(refConEstatus);
 
-    // 👇 NUEVO: Cargos en orden (lo que ya viene del backend)
+    // Cargos en orden (lo que ya viene del backend)
     setCargos(orden.cargosEnOrden || []);
   }, [orden]);
 
@@ -49,13 +56,12 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     }));
   };
 
-  // AHORA el botón + también guarda en el backend
+  // Botón +: agrega refacción y guarda en backend
   const handleAddLine = async () => {
     const cantNum = Number(line.cant) || 0;
     const puNum = Number(line.precioUnitario) || 0;
     const importe = cantNum * puNum;
 
-    // al menos que tenga cantidad y refacción
     if (!cantNum || !line.refaccion.trim()) {
       alert("Captura al menos Cantidad y Refacción.");
       return;
@@ -67,13 +73,15 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       precioUnitario: puNum,
       importeTotal: importe,
       estatus: "PENDIENTE",
+      requiereOC: false,
+      ocGenerada: false,
+      numeroOC: null,
+      ordenCompra: null,
     };
 
     const nuevasFilas = [...rows, nueva];
 
-    // Actualizamos UI primero
     setRows(nuevasFilas);
-    // limpiamos línea de captura
     setLine({
       cant: "",
       unidad: "",
@@ -89,7 +97,6 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       observaciones: "",
     });
 
-    // Guardamos inmediatamente en BD
     try {
       setSavingLine(true);
       await saveRequisicionDiagnostico(orden._id, {
@@ -99,9 +106,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     } catch (err) {
       console.error(err);
       alert("Error al guardar la refacción. Revisa conexión / backend.");
-
-      // Si falló el guardado, regresamos al estado anterior
-      setRows(rows);
+      setRows(rows); // revertimos
     } finally {
       setSavingLine(false);
     }
@@ -131,14 +136,12 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     handleRemoveRow(idx);
   };
 
-   const handleSetStatus = async (idx, estatus) => {
-    // Guardamos copia para poder revertir si falla el backend
+  const handleSetStatus = async (idx, estatus) => {
     const prevRows = rows;
     const nuevasFilas = rows.map((r, i) =>
       i === idx ? { ...r, estatus } : r
     );
 
-    // Actualizamos UI primero (optimista)
     setRows(nuevasFilas);
 
     try {
@@ -149,18 +152,97 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     } catch (err) {
       console.error(err);
       alert("Error al actualizar el estatus de la refacción.");
-      // Revertimos cambios en UI
       setRows(prevRows);
     }
   };
 
+  // 👉 Descargar / abrir PDF de una OC existente
+  const handleVerOrdenCompra = async (ordenCompraId) => {
+    if (!ordenCompraId) return;
+
+    try {
+      const resp = await http.get(`/ordenes-compra/${ordenCompraId}/pdf`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([resp.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo abrir el PDF de la orden de compra.");
+    }
+  };
+
+  // 👉 Generar orden de compra DESDE el checkbox
+  const handleGenerarOC = async (idx) => {
+    const ref = rows[idx];
+
+    if (ref.ocGenerada) {
+      // si ya existe, mejor abrimos el PDF directo
+      if (ref.ordenCompra) {
+        await handleVerOrdenCompra(ref.ordenCompra);
+      } else {
+        alert("Esta refacción ya tiene una OC generada.");
+      }
+      return;
+    }
+
+    if (ref.estatus !== "APROBADA") {
+      alert("Solo se puede generar orden de compra para refacciones APROBADAS.");
+      return;
+    }
+
+    const ok = window.confirm(
+      "¿Generar orden de compra para esta refacción?"
+    );
+    if (!ok) return;
+
+    const prevRows = rows;
+    let nuevasFilas = rows.map((r, i) =>
+      i === idx ? { ...r, _ocLoading: true } : r
+    );
+    setRows(nuevasFilas);
+
+    try {
+      const data = await generarOrdenCompra(orden._id, ref);
+      // espero algo como: { numeroOC, ordenCompraId }
+      nuevasFilas = nuevasFilas.map((r, i) =>
+        i === idx
+          ? {
+              ...r,
+              _ocLoading: false,
+              ocGenerada: true,
+              requiereOC: true,
+              numeroOC: data.numeroOC || r.numeroOC || null,
+              ordenCompra: data.ordenCompraId || r.ordenCompra || null,
+            }
+          : r
+      );
+      setRows(nuevasFilas);
+
+      alert(
+        data.numeroOC
+          ? `Orden de compra generada: ${data.numeroOC}`
+          : "Orden de compra generada correctamente."
+      );
+
+      // 👉 Abrir inmediatamente el PDF si tenemos el ID
+      if (data.ordenCompraId) {
+        await handleVerOrdenCompra(data.ordenCompraId);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al generar la orden de compra.");
+      setRows(prevRows);
+    }
+  };
 
   const totalGeneral = useMemo(
     () => rows.reduce((acc, r) => acc + (Number(r.importeTotal) || 0), 0),
     [rows]
   );
 
-  // 👇 NUEVO: total de cargos en orden
   const totalCargos = useMemo(
     () => cargos.reduce((acc, c) => acc + (Number(c.importeTotal) || 0), 0),
     [cargos]
@@ -173,8 +255,6 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       minimumFractionDigits: 2,
     }).format(Number(n) || 0);
 
-  // Este botón se puede usar para cambiar el estado de la orden,
-  // pero ya NO es obligatorio para guardar refacciones
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -253,13 +333,14 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
                 <th>Tiempo Entrega</th>
                 <th>Observaciones</th>
                 <th>Estatus</th>
+                <th>Orden compra</th>
                 <th>Acción</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="text-center text-muted">
+                  <td colSpan={15} className="text-center text-muted">
                     No hay refacciones capturadas.
                   </td>
                 </tr>
@@ -284,6 +365,31 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
                       {r.estatus || "PENDIENTE"}
                     </span>
                   </td>
+
+                  {/* ✅ COLUMNA ORDEN DE COMPRA */}
+                  <td className="text-center">
+                    {r.ocGenerada && r.ordenCompra ? (
+                      <button
+                        type="button"
+                        className="btn btn-info btn-sm"
+                        onClick={() => handleVerOrdenCompra(r.ordenCompra)}
+                      >
+                        {r.numeroOC ? `OC ${r.numeroOC}` : "Ver OC"}
+                      </button>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        disabled={r._ocLoading}
+                        onChange={() => handleGenerarOC(idx)}
+                        title={
+                          r.estatus !== "APROBADA"
+                            ? "Solo refacciones APROBADAS pueden generar OC"
+                            : "Generar orden de compra"
+                        }
+                      />
+                    )}
+                  </td>
+
                   <td className="text-center">
                     <div className="btn-group-vertical btn-group-sm">
                       <button
@@ -327,7 +433,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
                 <td className="text-end fw-bold">
                   {formatMoney(totalGeneral)}
                 </td>
-                <td colSpan={5}></td>
+                <td colSpan={6}></td> {/* 8 + 1 + 6 = 15 columnas */}
               </tr>
             </tfoot>
           </table>

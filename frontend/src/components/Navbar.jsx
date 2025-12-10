@@ -25,6 +25,25 @@ export default function Navbar({ collapsed, onToggle }) {
   }, [location.pathname]);
 
 
+
+  // arriba de todo, junto a otros useState:
+const [ordenesOpen, setOrdenesOpen] = useState(
+  location.pathname.startsWith("/ordenes")
+  || location.pathname.startsWith("/ordenes-compra")
+);
+
+useEffect(() => {
+  if (
+    location.pathname.startsWith("/ordenes") ||
+    location.pathname.startsWith("/ordenes-compra")
+  ) {
+    setOrdenesOpen(true);
+  }
+}, [location.pathname]);
+
+
+
+
   // === PROVEEDORES ===
 const [provOpen, setProvOpen] = useState(
   location.pathname.startsWith('/proveedores')
@@ -94,11 +113,11 @@ useEffect(() => {
 
 
 
-        <NavLink to="/ordenes" className="sidebar__link" title="Órdenes">
-          <span className="emoji">📋</span><span className="label">Órdenes</span>
+        <NavLink to="/ordenes-compra" className="sidebar__link" title="Órdenes">
+          <span className="emoji">📋</span><span className="label">Órdenes de compra</span>
         </NavLink>
 
-
+      
 
 
         {/* === GRUPO: CLIENTES === */}
@@ -330,6 +349,20 @@ useEffect(() => {
           </div>
         </div>
         {/* === FIN GRUPO REFACCIONARIA === */}
+
+
+
+                {/* Empleados (solo admin) */}
+        {user?.role === 'admin' && (
+          <NavLink
+            to="/empleados"
+            className="sidebar__link"
+            title="Empleados"
+          >
+            <span className="emoji">👷‍♂️</span>
+            <span className="label">Empleados</span>
+          </NavLink>
+        )}
 
 
 

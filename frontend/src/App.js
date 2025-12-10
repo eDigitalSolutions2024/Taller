@@ -33,15 +33,15 @@ import VehiculoConsultaCerradas from "./pages/vehiculo/VehiculosConsultaCerradas
 import VehiculoExportar from "./pages/vehiculo/VehiculosExportar";
 import VehiculoOrdenDetalle from "./pages/vehiculo/VehiculoOrdenDetalle";
 
-
-// ⇩ añade estos imports
+// Devoluciones
 import DevDinero from "./pages/refaccionaria/devoluciones/dinero";
 import DevPieza from "./pages/refaccionaria/devoluciones/pieza";
 import DevVale from "./pages/refaccionaria/devoluciones/vale";
 import ConsultaDevoluciones from "./pages/refaccionaria/devoluciones/consultas";
 import ConsultaVales from "./pages/refaccionaria/devoluciones/consultas-vales";
 
-
+import Empleados from "./pages/Empleados";
+import OrdenesCompraList from "./pages/OrdenesCompraList";
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -74,6 +74,8 @@ export default function App() {
           <Route path="clientes/*" element={<ClientesLayout />}>
             <Route index element={<Navigate to="consulta" replace />} />
             <Route path="alta" element={<AltaCliente />} />
+            {/* misma pantalla para editar cliente */}
+            <Route path="alta/:id" element={<AltaCliente />} /> {/* 👈 CORREGIDO */}
             <Route path="consulta" element={<ConsultaClientes />} />
           </Route>
 
@@ -81,11 +83,12 @@ export default function App() {
           <Route path="proveedores/*" element={<ProveedoresLayout />}>
             <Route index element={<Navigate to="alta" replace />} />
             <Route path="alta" element={<AltaProveedor />} />
+            {/* misma pantalla para editar proveedor */}
+            <Route path="alta/:id" element={<AltaProveedor />} /> {/* 👈 NUEVO */}
             <Route path="consultar" element={<ConsultaProveedores />} />
           </Route>
 
-
-            {/* Vehículo */}
+          {/* Vehículo */}
           <Route path="vehiculo/*" element={<VehiculosLayout />}>
             <Route index element={<Navigate to="entrada" replace />} />
             <Route path="entrada" element={<VehiculoEntrada />} />
@@ -101,22 +104,26 @@ export default function App() {
             <Route path="entrada" element={<EntradaInventario />} />
             <Route path="salida" element={<SalidaRefaccion />} />
 
-            {/* ✅ Rutas anidadas de Devoluciones */}
-              <Route path="devoluciones/*" element={<Devoluciones />}>
-                <Route index element={<Navigate to="dinero" replace />} />
-                <Route path="dinero" element={<DevDinero />} />
-                <Route path="pieza" element={<DevPieza />} />
-                <Route path="vale" element={<DevVale />} />
-                <Route path="consultas" element={<ConsultaDevoluciones />} />
-                <Route path="consultas-vales" element={<ConsultaVales />} />
-              </Route>
-              
+            {/* Devoluciones */}
+            <Route path="devoluciones/*" element={<Devoluciones />}>
+              <Route index element={<Navigate to="dinero" replace />} />
+              <Route path="dinero" element={<DevDinero />} />
+              <Route path="pieza" element={<DevPieza />} />
+              <Route path="vale" element={<DevVale />} />
+              <Route path="consultas" element={<ConsultaDevoluciones />} />
+              <Route path="consultas-vales" element={<ConsultaVales />} />
+            </Route>
+
             <Route path="consultar" element={<ConsultarInventario />} />
             <Route path="factura-proveedor" element={<ConsultarFacturaProveedor />} />
             <Route path="bd-codigos" element={<BDCodigos />} />
           </Route>
 
-          
+          {/* Empleados */}
+          <Route path="empleados" element={<Empleados />} />
+
+          {/* Órdenes de compra */}
+          <Route path="ordenes-compra" element={<OrdenesCompraList />} />
         </Route>
 
         {/* Fallback */}

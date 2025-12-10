@@ -10,6 +10,11 @@ connectDB();
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 
+
+const empleadosRoutes = require('./routes/empleados');
+const ordenesCompraRoutes = require('./routes/ordenesCompra');
+
+
 app.get('/', (_req, res) => res.send('API Taller OK'));
 app.use('/api/auth', require('./routes/authRoutes'));
 
@@ -30,7 +35,12 @@ app.use('/api/codigos', require('./routes/codigos'));  // <— IMPORTANTE
 
 app.use('/api/salidas', require('./routes/salidas'));
 
+app.use('/api/empleados', empleadosRoutes);
+
 app.use('/api/devoluciones', require('./routes/devoluciones')); 
+
+
+app.use('/api/ordenes-compra', ordenesCompraRoutes);
 
 // index.js / app.js del backend
 app.use('/api', require('./routes/facturas')); // ahora existe GET /api/facturas-proveedor

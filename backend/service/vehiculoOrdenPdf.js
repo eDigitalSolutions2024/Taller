@@ -3,6 +3,7 @@
 
 const puppeteer = require('puppeteer');
 const dayjs = require('dayjs');
+const Codigo = require('../models/CodigoRefaccion'); // 👈 servicios / refacciones
 
 // Paleta cercana a tu sistema
 const PRIMARY = '#2563EB';
@@ -66,7 +67,7 @@ function fmtDireccionFull(v, extra = {}) {
 
 // Construye una lista HTML <ul> a partir de un arreglo de textos
 function buildList(items = []) {
-  const clean = items.filter(Boolean);
+  const clean = (items || []).filter(Boolean);
   if (!clean.length) return '&nbsp;';
   return `<ul style="margin:0; padding-left:14px;">${clean
     .map((t) => `<li>${esc(t)}</li>`)
@@ -75,7 +76,7 @@ function buildList(items = []) {
 
 // ---------- HTML DEL PDF "IMPRIMIR" ----------
 
-function buildOrdenHtml(vehiculo) {
+function buildOrdenHtml(vehiculo, serviciosDocs = []) {
   const {
     ordenServicio,
     nombreGobierno,
@@ -113,35 +114,38 @@ function buildOrdenHtml(vehiculo) {
   } = vehiculo;
 
   const servicioReparacion = vehiculo.servicioReparacion || {};
-  const {
-    alineacionComputadora,
-    balanceoPorRueda,
-    rotacion,
-    instalacionAmortiguadorNormal,
-    instalacionAmortiguadorEspecial,
-    montajeLlantaAutocamioneta,
-    limpiezaAjusteFrenosAutocamioneta,
-    frenos2RuedasAutocamioneta,
-    cambioBrazo,
-    cambioTerminalDireccion,
-    cambioRotula,
-    infoLlantas,
-    revisionFallas,
-  } = servicioReparacion;
+  const infoLlantas = servicioReparacion.infoLlantas || '';
+  const revisionFallas = servicioReparacion.revisionFallas || '';
 
-  const fechaRecepcion = fmtFecha(vehiculo.fechaRecepcion);
-  const horaRecepcion =
-    vehiculo.horaRecepcion || fmtHora(vehiculo.fechaRecepcion);
+  // --- Servicios dinámicos desde la BD (misma lógica que OPERATIVO) ---
+  const serviciosMotor = [];
+  const serviciosLubricacion = [];
+  const serviciosRevision = [];
+  const serviciosOtros = [];
 
-  const direccionCompleta = fmtDireccionFull(direccion, {
-    numeroExt,
-    numeroInt,
-    colonia,
-    ciudad,
-    estado,
-  });
+  for (const s of serviciosDocs) {
+    const label = `${s.codigo} - ${s.descripcion || ''}`.trim();
+    const grupo = s.grupoServicio || 'otros';
 
-  // Texto largo de "Condiciones de servicio" (se mantiene como contrato)
+    if (grupo === 'motor') serviciosMotor.push(label);
+    else if (grupo === 'lubricacion') serviciosLubricacion.push(label);
+    else if (grupo === 'revision') serviciosRevision.push(label);
+    else serviciosOtros.push(label);
+  }
+
+  const serviciosMotorHtml = buildList(serviciosMotor);
+  const serviciosLubricacionHtml = buildList(serviciosLubricacion);
+  const serviciosRevisionHtml = buildList(serviciosRevision);
+  const serviciosOtrosHtml = buildList(serviciosOtros);
+
+  // --- Texto de fallas reportadas y llantas ---
+  const fallasCliente = diagnosticoTecnico || revisionFallas || '';
+  const textoLlantas = infoLlantas || '';
+
+  // --- Otros / comentarios generales ---
+  const textoOtros = indicadoresTablero || otros || observaciones || '';
+
+  // Texto de "Condiciones de servicio"
   const condicionesCortas = `
     ACEPTO QUE MI CASO REQUIERE COMUNICARME PARA PRUEBA Y REPROGRAMACIÓN DE MI VEHÍCULO. 
     QUEDA BAJO MI RESPONSABILIDAD CUALQUIER OBJETO QUE PERMANEZCA EN EL VEHÍCULO. 
@@ -161,44 +165,17 @@ function buildOrdenHtml(vehiculo) {
     10. En todo lo no previsto en estas cláusulas, se estará a lo dispuesto por la legislación aplicable en materia de protección al consumidor y servicios automotrices.
   `;
 
-  // --- Servicios dinámicos (sin texto predeterminado) ---
-  const serviciosMotor = [
-    cambioBrazo && 'Cambio de brazo',
-    cambioTerminalDireccion && 'Cambio de terminal de dirección',
-    cambioRotula && 'Cambio de rótula',
-    instalacionAmortiguadorNormal && 'Instalación amortiguador (normal)',
-    instalacionAmortiguadorEspecial &&
-      'Instalación amortiguador (especial)',
-  ];
+  const fechaRecepcion = fmtFecha(vehiculo.fechaRecepcion);
+  const horaRecepcion =
+    vehiculo.horaRecepcion || fmtHora(vehiculo.fechaRecepcion);
 
-  const serviciosLubricacion = [
-    // aquí podrías agregar servicios de lubricación si los manejas
-  ];
-
-  const serviciosRevision = [
-    alineacionComputadora && 'Alineación por computadora',
-    balanceoPorRueda && 'Balanceo por rueda',
-    rotacion && 'Rotación de llantas',
-  ];
-
-  const serviciosOtros = [
-    montajeLlantaAutocamioneta && 'Montaje llanta auto/camioneta',
-    limpiezaAjusteFrenosAutocamioneta &&
-      'Limpieza y ajuste de frenos auto/camioneta',
-    frenos2RuedasAutocamioneta && 'Frenos 2 ruedas auto/camioneta',
-  ];
-
-  const serviciosMotorHtml = buildList(serviciosMotor);
-  const serviciosLubricacionHtml = buildList(serviciosLubricacion);
-  const serviciosRevisionHtml = buildList(serviciosRevision);
-  const serviciosOtrosHtml = buildList(serviciosOtros);
-
-  // --- Texto de fallas reportadas y llantas ---
-  const fallasCliente = diagnosticoTecnico || revisionFallas || '';
-  const textoLlantas = infoLlantas || '';
-
-  // --- Otros / comentarios generales ---
-  const textoOtros = indicadoresTablero || otros || observaciones || '';
+  const direccionCompleta = fmtDireccionFull(direccion, {
+    numeroExt,
+    numeroInt,
+    colonia,
+    ciudad,
+    estado,
+  });
 
   return `
 <!DOCTYPE html>
@@ -424,7 +401,7 @@ function buildOrdenHtml(vehiculo) {
     </tr>
   </table>
 
-  <!-- Servicio (info real de la orden, sin texto predeterminado fijo) -->
+  <!-- Servicio -->
   <div class="section-title" style="margin-top:3px;">S E R V I C I O</div>
   <div class="sub-title">DETALLE DE SERVICIOS SOLICITADOS</div>
   <table>
@@ -513,7 +490,19 @@ function buildOrdenHtml(vehiculo) {
 // ---------- FUNCIÓN PRINCIPAL ----------
 
 async function streamVehiculoOrdenPdf(res, vehiculo) {
-  const html = buildOrdenHtml(vehiculo);
+  // Igual que en el OPERATIVO: leemos los códigos seleccionados y jalamos los docs
+  const servicioReparacion = vehiculo.servicioReparacion || {};
+  const codigosSel = servicioReparacion.serviciosSeleccionados || [];
+
+  let serviciosDocs = [];
+  if (codigosSel.length) {
+    serviciosDocs = await Codigo.find({
+      tipo: 'servicio',
+      codigo: { $in: codigosSel },
+    }).lean();
+  }
+
+  const html = buildOrdenHtml(vehiculo, serviciosDocs);
 
   const browser = await puppeteer.launch({
     headless: 'new',

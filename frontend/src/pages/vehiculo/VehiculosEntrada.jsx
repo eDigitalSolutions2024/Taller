@@ -1,12 +1,9 @@
 // src/pages/vehiculo/VehiculoEntrada.jsx
 import React, { useState, useEffect } from "react";
-import { getClientes } from "../../api/customers"; // 👈 IMPORTANTE
-import VehiculoNuevoForm from "./VehiculoNuevoForm"; 
-import { listClientes } from "../../api/customers";      // si lo usas
-import { listVehiculosByCliente } from "../../api/vehiculos"; // 👈 NUEVO
+import { getClientes } from "../../api/customers"; // 👈 obtiene clientes del backend
+import VehiculoNuevoForm from "./VehiculoNuevoForm";
+import { listVehiculosByCliente } from "../../api/vehiculos"; // 👈 vehículos por cliente
 import { useNavigate } from "react-router-dom";
-
-
 
 export default function VehiculoEntrada() {
   const [q, setQ] = useState("");
@@ -14,16 +11,18 @@ export default function VehiculoEntrada() {
   const [filtrados, setFiltrados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
   const [mostrarAcciones, setMostrarAcciones] = useState(false);
   const [mostrarFormNuevoCarro, setMostrarFormNuevoCarro] = useState(false);
+
   const [vehiculosCliente, setVehiculosCliente] = useState([]);
-const [loadingVehiculos, setLoadingVehiculos] = useState(false);
-const [errorVehiculos, setErrorVehiculos] = useState("");
+  const [loadingVehiculos, setLoadingVehiculos] = useState(false);
+  const [errorVehiculos, setErrorVehiculos] = useState("");
 
-const navigate = useNavigate();  
+  const navigate = useNavigate();
 
-
+  // 1) Cargar clientes al montar
   useEffect(() => {
     const cargarClientes = async () => {
       try {
@@ -47,8 +46,6 @@ const navigate = useNavigate();
     cargarClientes();
   }, []);
 
-
-
   // 2) Filtrar lista mientras escribes
   useEffect(() => {
     const term = q.toLowerCase();
@@ -65,7 +62,11 @@ const navigate = useNavigate();
 
   const handleSeleccion = (cliente) => {
     setClienteSeleccionado(cliente);
-    setMostrarAcciones(false); // hasta que le den clic a Buscar
+    setMostrarAcciones(false);       // hasta que den clic en Buscar
+    setMostrarFormNuevoCarro(false); // por si venías de otro cliente
+    setVehiculosCliente([]);
+    setErrorVehiculos("");
+
     const nombre =
       cliente.nombre ||
       cliente.nombre_cliente ||
@@ -73,16 +74,33 @@ const navigate = useNavigate();
     setQ(nombre);
   };
 
-const handleBuscar = () => {
-  if (!clienteSeleccionado) {
-    alert("Primero selecciona un cliente de la lista.");
-    return;
-  }
+  const cargarVehiculosCliente = async (clienteId) => {
+    try {
+      setLoadingVehiculos(true);
+      setErrorVehiculos("");
 
-  setMostrarAcciones(true);
-  cargarVehiculosCliente(clienteSeleccionado._id); // 👈 AQUÍ SE CARGAN
-};
+      const res = await listVehiculosByCliente(clienteId);
+      // el backend responde { ok: true, data: [...] }
+      setVehiculosCliente(res.data.data || []);
+    } catch (err) {
+      console.error("Error cargando vehículos del cliente:", err);
+      setErrorVehiculos("No se pudieron cargar los vehículos del cliente.");
+      setVehiculosCliente([]);
+    } finally {
+      setLoadingVehiculos(false);
+    }
+  };
 
+  const handleBuscar = () => {
+    if (!clienteSeleccionado) {
+      alert("Primero selecciona un cliente de la lista.");
+      return;
+    }
+
+    setMostrarAcciones(true);
+    setMostrarFormNuevoCarro(false); // reinicia el formulario de carro
+    cargarVehiculosCliente(clienteSeleccionado._id); // 👈 carga vehículos
+  };
 
   const handleNuevoCarro = () => {
     console.log("Nuevo carro para cliente:", clienteSeleccionado);
@@ -93,25 +111,6 @@ const handleBuscar = () => {
     console.log("Orden sin carro para cliente:", clienteSeleccionado);
     // aquí luego harás el flujo de orden sin carro
   };
-
-
-  const cargarVehiculosCliente = async (clienteId) => {
-  try {
-    setLoadingVehiculos(true);
-    setErrorVehiculos("");
-
-    const res = await listVehiculosByCliente(clienteId);
-    // el backend responde { ok: true, data: [...] }
-    setVehiculosCliente(res.data.data || []);
-  } catch (err) {
-    console.error("Error cargando vehículos del cliente:", err);
-    setErrorVehiculos("No se pudieron cargar los vehículos del cliente.");
-    setVehiculosCliente([]);
-  } finally {
-    setLoadingVehiculos(false);
-  }
-};
-
 
   return (
     <div className="container-fluid">
@@ -143,6 +142,8 @@ const handleBuscar = () => {
                   setQ(e.target.value);
                   setClienteSeleccionado(null);
                   setMostrarAcciones(false);
+                  setMostrarFormNuevoCarro(false);
+                  setVehiculosCliente([]);
                 }}
               />
             </div>
@@ -207,77 +208,77 @@ const handleBuscar = () => {
             </p>
           )}
 
-     {/* 4) Después de dar Buscar → mostrar vehículos del cliente + acciones */}
-{mostrarAcciones && clienteSeleccionado && (
-  <div className="mt-3">
-    {/* Lista de vehículos del cliente */}
-    <div className="mb-2">
-      {loadingVehiculos && (
-        <p className="text-muted mb-1">Cargando vehículos...</p>
-      )}
+          {/* 4) Después de dar Buscar → mostrar vehículos del cliente + acciones */}
+          {mostrarAcciones && clienteSeleccionado && (
+            <div className="mt-3">
+              {/* Lista de vehículos del cliente */}
+              <div className="mb-2">
+                {loadingVehiculos && (
+                  <p className="text-muted mb-1">Cargando vehículos...</p>
+                )}
 
-      {errorVehiculos && (
-        <p className="text-danger mb-1">{errorVehiculos}</p>
-      )}
+                {errorVehiculos && (
+                  <p className="text-danger mb-1">{errorVehiculos}</p>
+                )}
 
-      {!loadingVehiculos && !errorVehiculos && vehiculosCliente.length > 0 && (
-        <div className="d-flex flex-wrap gap-2 mb-2">
-          {vehiculosCliente.map((v) => {
-            const label = `${v.marca || ""} ${v.modelo || ""} - ${
-              v.anio || ""
-            } - ${v.color || ""}`.trim();
+                {!loadingVehiculos &&
+                  !errorVehiculos &&
+                  vehiculosCliente.length > 0 && (
+                    <div className="d-flex flex-wrap gap-2 mb-2">
+                      {vehiculosCliente.map((v) => {
+                        const label = `${v.marca || ""} ${v.modelo || ""} - ${
+                          v.anio || ""
+                        } - ${v.color || ""}`.trim();
 
-            return (
+                        return (
+                          <button
+                            key={v._id}
+                            type="button"
+                            className="btn btn-outline-primary btn-sm"
+                            onClick={() => navigate(`/vehiculo/orden/${v._id}`)} // 👈 ir al detalle
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                {!loadingVehiculos &&
+                  !errorVehiculos &&
+                  vehiculosCliente.length === 0 && (
+                    <p className="text-muted mb-2">
+                      Este cliente aún no tiene vehículos registrados.
+                    </p>
+                  )}
+              </div>
+
+              {/* Cliente seleccionado + botones de acción */}
+              <p className="mb-2">
+                <strong>Cliente Seleccionado: </strong>
+                {clienteSeleccionado.nombre || clienteSeleccionado.nombre_cliente}
+              </p>
+
               <button
-                key={v._id}
                 type="button"
-                className="btn btn-outline-primary btn-sm"
-                onClick={() => navigate(`/vehiculo/orden/${v._id}`)}   // 👈 ir al detalle
-  >
-                {label}
+                className="btn btn-primary me-2"
+                onClick={handleNuevoCarro}
+              >
+                Nuevo Carro
               </button>
-            );
-          })}
-        </div>
-      )}
-
-      {!loadingVehiculos &&
-        !errorVehiculos &&
-        vehiculosCliente.length === 0 && (
-          <p className="text-muted mb-2">
-            Este cliente aún no tiene vehículos registrados.
-          </p>
-        )}
-    </div>
-
-    {/* Cliente seleccionado + botones de acción */}
-    <p className="mb-2">
-      <strong>Cliente Seleccionado: </strong>
-      {clienteSeleccionado.nombre || clienteSeleccionado.nombre_cliente}
-    </p>
-
-    <button
-      type="button"
-      className="btn btn-primary me-2"
-      onClick={handleNuevoCarro}
-    >
-      Nuevo Carro
-    </button>
-    <button
-      type="button"
-      className="btn btn-secondary"
-      onClick={handleSinCarro}
-    >
-      Sin Carro
-    </button>
-  </div>
-)}
-
-
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleSinCarro}
+              >
+                Sin Carro
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-       {/* 👇 AQUÍ APARECE EL FORMULARIO GRANDE CUANDO DAN "Nuevo Carro" */}
+      {/* 👇 AQUÍ APARECE EL FORMULARIO GRANDE CUANDO DAN "Nuevo Carro" */}
       {mostrarFormNuevoCarro && clienteSeleccionado && (
         <VehiculoNuevoForm cliente={clienteSeleccionado} />
       )}

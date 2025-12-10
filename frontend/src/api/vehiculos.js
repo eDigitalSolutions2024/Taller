@@ -46,6 +46,13 @@ export const openImprimirPdf = (id) => {
   window.open(url, "_blank", "noopener");
 };
 
+export async function generarOrdenCompra(ordenId, refaccion) {
+  const { data } = await http.post(`/vehiculos/${ordenId}/orden-compra`, {
+    refaccion,
+  });
+  return data; // aquí te puede regresar { numeroOC, idOC, ... }
+};
+
 // Cerrar orden
 export const closeOrden = (id) =>
   http.put(`/vehiculos/${id}/cerrar`);

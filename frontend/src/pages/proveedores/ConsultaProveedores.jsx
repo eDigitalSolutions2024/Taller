@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { listProveedores } from "../../api/providers";
+import { useNavigate } from "react-router-dom";
 
 const LIMIT_DEFAULT = 10;
 
@@ -9,7 +10,6 @@ const fmtTelFijo = (row) => {
   return [lada, fijo].filter(Boolean).join(" ");
 };
 
-// Intentamos varios nombres posibles para celular (por si no existe aún en tu modelo)
 const getCelular = (row) =>
   row.celular ||
   row.telefonoCelular ||
@@ -27,10 +27,17 @@ export default function ConsultaProveedores() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Debounce simple para la búsqueda
+  const navigate = useNavigate();
+
+  const handleEdit = (id) => {
+    // reutilizamos AltaProveedor para editar
+    navigate(`/proveedores/alta/${id}`);
+  };
+
   const debouncedQ = useMemo(() => q.trim(), [q]);
+
   useEffect(() => {
-    const id = setTimeout(() => setPage(1), 300); // cuando cambie q, regresa a página 1
+    const id = setTimeout(() => setPage(1), 300);
     return () => clearTimeout(id);
   }, [debouncedQ]);
 
@@ -75,6 +82,7 @@ export default function ConsultaProveedores() {
         <div className="card-body">
           {error && <div className="alert alert-danger py-2">{error}</div>}
 
+          {/* 🔍 Filtros */}
           <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
             <div>
               <label className="me-2">Mostrar:</label>
@@ -116,18 +124,19 @@ export default function ConsultaProveedores() {
                   <th style={{ minWidth: 150 }}>Teléfono</th>
                   <th style={{ minWidth: 150 }}>Celular</th>
                   <th style={{ minWidth: 160 }}>RFC</th>
+                  <th style={{ minWidth: 120 }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-4">
+                    <td colSpan={6} className="text-center py-4">
                       Cargando...
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-4">
+                    <td colSpan={6} className="text-center py-4">
                       Sin resultados
                     </td>
                   </tr>
@@ -150,6 +159,14 @@ export default function ConsultaProveedores() {
                         <td className="font-monospace">{telFijo}</td>
                         <td className="font-monospace">{cel}</td>
                         <td className="font-monospace">{r.rfc || "—"}</td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => handleEdit(r._id)}
+                          >
+                            Editar
+                          </button>
+                        </td>
                       </tr>
                     );
                   })

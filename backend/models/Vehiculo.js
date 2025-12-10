@@ -36,6 +36,11 @@ const vehiculoSchema = new Schema(
     horaRecepcion: String,
 
     // ----- Datos de cliente / gobierno (snapshot en la orden) -----
+    // Particular
+    nombreCliente: String,
+    apellidoPaterno: String,
+    apellidoMaterno: String,
+    
     nombreGobierno: String,
     nombreContactoGobierno: String,
     nombreDependencia: String,
@@ -72,6 +77,7 @@ const vehiculoSchema = new Schema(
 
     // ----- Accesorios / checkboxes -----
     grua: String,
+    precioGrua: { type: Number, default: 0 },   
     espejoLateralIzq: Boolean,
     espejoLateralDer: Boolean,
     copasDelanterasIzq: Boolean,
@@ -106,26 +112,14 @@ const vehiculoSchema = new Schema(
     otros: String,
     observaciones: String,
 
-    // ===== Servicio o Reparación =====
-    servicioReparacion: {
-      alineacionComputadora: { type: Boolean, default: false },
-      balanceoPorRueda: { type: Boolean, default: false },
-      rotacion: { type: Boolean, default: false },
+   // ===== Servicio o Reparación =====
+servicioReparacion: {
+  // lista de códigos S1, S2, S3... que seleccionas en la tabla
+  serviciosSeleccionados: [{ type: String }],
 
-      instalacionAmortiguadorNormal: { type: Boolean, default: false },
-      instalacionAmortiguadorEspecial: { type: Boolean, default: false },
-
-      montajeLlantaAutocamioneta: { type: Boolean, default: false },
-      limpiezaAjusteFrenosAutocamioneta: { type: Boolean, default: false },
-      frenos2RuedasAutocamioneta: { type: Boolean, default: false },
-
-      cambioBrazo: { type: Boolean, default: false },
-      cambioTerminalDireccion: { type: Boolean, default: false },
-      cambioRotula: { type: Boolean, default: false },
-
-      infoLlantas: { type: String, default: "" },
-      revisionFallas: { type: String, default: "" },
-    },
+  infoLlantas: { type: String, default: "" },
+  revisionFallas: { type: String, default: "" },
+},
 
     // indica si la orden ya fue “iniciada” desde Servicio/Reparación
     ordenIniciada: {
@@ -155,6 +149,16 @@ const vehiculoSchema = new Schema(
           type: String,
           enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
           default: 'PENDIENTE',
+        },
+
+// 👇👇 NUEVOS CAMPOS PARA ORDEN DE COMPRA
+        requiereOC: { type: Boolean, default: false },   // el checkbox del mecánico
+        ocGenerada: { type: Boolean, default: false },   // ya se generó al menos una OC
+        numeroOC:   { type: String,  default: null },    // folio de la OC principal
+        ordenCompra: {
+          type: Schema.Types.ObjectId,
+          ref: 'OrdenCompra',
+          default: null,
         },
       },
     ],
@@ -225,5 +229,24 @@ observacionesInternas: { type: String, default: "" },
     timestamps: true, // createdAt, updatedAt
   }
 );
+
+
+// Generar número de Orden de Servicio automáticamente si no viene
+vehiculoSchema.pre('save', function (next) {
+  if (!this.ordenServicio || this.ordenServicio === "") {
+    const ahora = new Date();
+    const yyyy = ahora.getFullYear();
+    const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+    const dd = String(ahora.getDate()).padStart(2, '0');
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mi = String(ahora.getMinutes()).padStart(2, '0');
+    const ss = String(ahora.getSeconds()).padStart(2, '0');
+
+    // Ejemplo: OS-20251210-143015
+    this.ordenServicio = `OS-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+  }
+  next();
+});
+
 
 module.exports = mongoose.model('Vehiculo', vehiculoSchema);

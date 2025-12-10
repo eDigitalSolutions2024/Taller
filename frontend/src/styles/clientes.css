@@ -44,3 +44,9 @@
 }
 .thead{ background:#f8fafc; font-weight:800; }
 .paginacion{ margin-top:12px; display:flex; align-items:center; gap:10px; }
+.thead,
+.trow {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1.2fr 1.2fr 0.8fr; /* 6 columnas */
+  gap: 8px;
+}

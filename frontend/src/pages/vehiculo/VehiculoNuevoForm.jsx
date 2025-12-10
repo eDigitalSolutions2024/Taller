@@ -2,19 +2,41 @@
 import React, { useEffect, useState } from "react";
 import { createVehiculo } from "../../api/vehiculos";
 
-export default function VehiculoNuevoForm({ cliente, initialData, readOnly = false, }) {
+// 🔹 Helper para generar el folio igual que en el backend
+function generateOrdenServicio() {
+  const ahora = new Date();
+  const yyyy = ahora.getFullYear();
+  const mm = String(ahora.getMonth() + 1).padStart(2, "0");
+  const dd = String(ahora.getDate()).padStart(2, "0");
+  const hh = String(ahora.getHours()).padStart(2, "0");
+  const mi = String(ahora.getMinutes()).padStart(2, "0");
+  const ss = String(ahora.getSeconds()).padStart(2, "0");
+  return `OS-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
+}
+
+export default function VehiculoNuevoForm({
+  cliente,
+  initialData,
+  readOnly = false,
+}) {
   const [form, setForm] = useState({
     // ----- Datos de orden / cabecera -----
-    ordenServicio: "",
+    ordenServicio: "", // se llenará automático al montar
     fechaRecepcion: "",
     horaRecepcion: "",
 
-    // ----- Datos de cliente / gobierno -----
+    // ----- Datos cliente PARTICULAR -----
+    nombreCliente: "",
+    apellidoPaterno: "",
+    apellidoMaterno: "",
+
+    // ----- Datos cliente GOBIERNO / EMPRESA -----
     nombreGobierno: "",
     nombreContactoGobierno: "",
     nombreDependencia: "",
     nombreContactoDependencia: "",
 
+    // ----- Teléfonos / dirección comunes -----
     telefonoFijoLada: "",
     telefonoFijo: "",
     celularLada: "",
@@ -46,6 +68,7 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
 
     // ----- Checkboxes de accesorios / daños -----
     grua: "",
+    precioGrua: 0, // 🔹 como número
     espejoLateralIzq: false,
     espejoLateralDer: false,
     copasDelanterasIzq: false,
@@ -81,51 +104,95 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     observaciones: "",
   });
 
+  // 🔹 Al montar, si es ALTA (sin initialData), generamos folio de OS
+  useEffect(() => {
+    if (!initialData) {
+      setForm((prev) => ({
+        ...prev,
+        ordenServicio: generateOrdenServicio(),
+      }));
+    }
+  }, [initialData]);
+
   // Precarga datos del cliente cuando llega del padre
-useEffect(() => {
-  if (!cliente) return;
+  useEffect(() => {
+    if (!cliente) return;
 
-  const telFijo = cliente.telefonoFijo || {};
-  const cel = cliente.celular || {};
-  const dir = cliente.direccion || {};
+    const esParticular = cliente.tipoCliente === "Particular";
 
-  setForm((prev) => ({
-    ...prev,
-    nombreContactoGobierno: cliente.nombre || "",
+    const tel = cliente.telefono || {};
+    const cel = cliente.celular || {};
+    const dir = cliente.direccion || {};
+    const gob = cliente.gobierno || {};
+    const dep = gob.dependencia || {};
+    const contactoGob = gob.contactoGobierno || {};
+    const contactoDep = dep.contacto || {};
 
-    // Teléfono fijo
-    telefonoFijoLada: telFijo.lada || "",
-    telefonoFijo: telFijo.numero || "",
+    setForm((prev) => ({
+      ...prev,
 
-    // Celular
-    celularLada: cel.lada || "",
-    celular: cel.numero || "",
+      // === Datos de encabezado según tipo de cliente ===
+      ...(esParticular
+        ? {
+            // PARTICULAR
+            nombreCliente: cliente.nombre || "",
+            apellidoPaterno: cliente.apellidoPaterno || "",
+            apellidoMaterno: cliente.apellidoMaterno || "",
+            // limpiamos campos de empresa/gobierno
+            nombreGobierno: "",
+            nombreContactoGobierno: "",
+            nombreDependencia: "",
+            nombreContactoDependencia: "",
+          }
+        : {
+            // EMPRESA / GOBIERNO
+            nombreGobierno: gob.nombreGobierno || cliente.nombre || "",
+            nombreContactoGobierno:
+              contactoGob.nombre || contactoDep.nombre || "",
+            nombreDependencia: dep.nombre || "",
+            nombreContactoDependencia: contactoDep.nombre || "",
+            // limpiamos campos de particular
+            nombreCliente: "",
+            apellidoPaterno: "",
+            apellidoMaterno: "",
+          }),
 
-    // Dirección
-    direccion: dir.calle || "",
-    numeroExt: dir.numeroExterior || "",
-    numeroInt: dir.numeroInterior || "",
-    colonia: dir.colonia || "",
-    codigoPostal: dir.codigoPostal || "",
-    ciudad: dir.ciudad || "",
-    estado: dir.estado || "",
+      // === Teléfonos ===
+      telefonoFijoLada: tel.lada || "",
+      telefonoFijo: tel.numero || "",
+      celularLada: cel.lada || "",
+      celular: cel.numero || "",
 
-    // Correo
-    correo: cliente.correo || "",
-  }));
-}, [cliente]);
+      // === Dirección ===
+      direccion: dir.calle || "",
+      numeroExt: dir.numeroExterior || "",
+      numeroInt: dir.numeroInterior || "",
+      colonia: dir.colonia || "",
+      codigoPostal: dir.codigoPostal || "",
+      ciudad: dir.ciudad || "",
+      estado: dir.estado || "",
 
-// cuando viene una orden completa para detalle
-useEffect(() => {
-  if (!initialData) return;
-  setForm((prev) => ({
-    ...prev,
-    ...initialData,
-  }));
-}, [initialData]);
+      // === RFC y correo ===
+      rfc: cliente.rfc || "",
+      correo:
+        cliente.email ||
+        contactoGob.correo ||
+        contactoDep.correo ||
+        "",
+    }));
+  }, [cliente]);
+
+  // cuando viene una orden completa para detalle
+  useEffect(() => {
+    if (!initialData) return;
+    setForm((prev) => ({
+      ...prev,
+      ...initialData,
+    }));
+  }, [initialData]);
 
   const handleChange = (e) => {
-    if (readOnly) return;   // 👈 no permitir editar en detalle
+    if (readOnly) return; // no permitir editar en detalle
 
     const { name, value, type, checked } = e.target;
     setForm((prev) => ({
@@ -134,34 +201,32 @@ useEffect(() => {
     }));
   };
 
-  // dentro del componente:
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (readOnly) return;  
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (readOnly) return;
 
-  if (!cliente || !cliente._id) {
-    alert("No hay cliente seleccionado.");
-    return;
-  }
+    if (!cliente || !cliente._id) {
+      alert("No hay cliente seleccionado.");
+      return;
+    }
 
-  try {
-    // Puedes formatear fechaRecepcion a Date aquí si quieres:
-    const payload = {
-      ...form,
-      // ejemplo: convertir fechaRecepcion string -> Date:
-      // fechaRecepcion: form.fechaRecepcion ? new Date(form.fechaRecepcion) : null,
-    };
+    try {
+      const payload = {
+        ...form,
+        // aseguramos que precioGrua vaya como número
+        precioGrua: form.grua === "SI" ? Number(form.precioGrua || 0) : 0,
+      };
 
-    const res = await createVehiculo(cliente._id, payload);
-    console.log("Vehiculo guardado:", res.data);
-    alert("Vehículo / orden guardada correctamente.");
-    // aquí podrías limpiar el formulario si quieres:
-    // setForm(estadoInicial);
-  } catch (err) {
-    console.error("Error guardando vehiculo:", err);
-    alert("Error al guardar el vehículo. Revisa la consola.");
-  }
-};
+      const res = await createVehiculo(cliente._id, payload);
+      console.log("Vehiculo guardado:", res.data || res);
+      alert(
+        `Vehículo / orden guardada correctamente.\nOrden de Servicio: ${payload.ordenServicio}`
+      );
+    } catch (err) {
+      console.error("Error guardando vehiculo:", err);
+      alert("Error al guardar el vehículo. Revisa la consola.");
+    }
+  };
 
   // helper para selects de SI/NO
   const renderSiNoSelect = (name, label) => (
@@ -194,7 +259,7 @@ const handleSubmit = async (e) => {
                 className="form-control"
                 name="ordenServicio"
                 value={form.ordenServicio}
-                onChange={handleChange}
+                readOnly // 🔒 solo visualizar
               />
             </div>
             <div className="col-md-4">
@@ -224,51 +289,96 @@ const handleSubmit = async (e) => {
             {/* -------- COLUMNA IZQUIERDA (CLIENTE) -------- */}
             <div className="col-md-6">
               <div className="row g-2">
-                <div className="col-12">
-                  <label className="form-label">Nombre Gobierno</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    name="nombreGobierno"
-                    value={form.nombreGobierno}
-                    onChange={handleChange}
-                  />
-                </div>
+                {cliente?.tipoCliente === "Particular" ? (
+                  <>
+                    {/* === PARTICULAR === */}
+                    <div className="col-12">
+                      <label className="form-label">Nombre Cliente</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="nombreCliente"
+                        value={form.nombreCliente}
+                        onChange={handleChange}
+                      />
+                    </div>
 
-                <div className="col-12">
-                  <label className="form-label">Nombre Contacto Gobierno</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    name="nombreContactoGobierno"
-                    value={form.nombreContactoGobierno}
-                    onChange={handleChange}
-                  />
-                </div>
+                    <div className="col-12">
+                      <label className="form-label">Apellido Paterno</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="apellidoPaterno"
+                        value={form.apellidoPaterno}
+                        onChange={handleChange}
+                      />
+                    </div>
 
-                <div className="col-12">
-                  <label className="form-label">Nombre Dependencia</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    name="nombreDependencia"
-                    value={form.nombreDependencia}
-                    onChange={handleChange}
-                  />
-                </div>
+                    <div className="col-12">
+                      <label className="form-label">Apellido Materno</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="apellidoMaterno"
+                        value={form.apellidoMaterno}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* === EMPRESA / GOBIERNO === */}
+                    <div className="col-12">
+                      <label className="form-label">
+                        Nombre Gobierno / Empresa
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="nombreGobierno"
+                        value={form.nombreGobierno}
+                        onChange={handleChange}
+                      />
+                    </div>
 
-                <div className="col-12">
-                  <label className="form-label">
-                    Nombre Contacto Dependencia
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    name="nombreContactoDependencia"
-                    value={form.nombreContactoDependencia}
-                    onChange={handleChange}
-                  />
-                </div>
+                    <div className="col-12">
+                      <label className="form-label">
+                        Nombre Contacto Gobierno / Empresa
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="nombreContactoGobierno"
+                        value={form.nombreContactoGobierno}
+                        onChange={handleChange}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Nombre Dependencia</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="nombreDependencia"
+                        value={form.nombreDependencia}
+                        onChange={handleChange}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">
+                        Nombre Contacto Dependencia
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        name="nombreContactoDependencia"
+                        value={form.nombreContactoDependencia}
+                        onChange={handleChange}
+                      />
+                    </div>
+                  </>
+                )}
 
                 {/* Teléfonos */}
                 <div className="col-md-3">
@@ -415,6 +525,22 @@ const handleSubmit = async (e) => {
                     <option value="NO">NO</option>
                   </select>
                 </div>
+
+                {/* 🔹 Campo precioGrua solo si grua === "SI" */}
+                {form.grua === "SI" && (
+                  <div className="col-12">
+                    <label className="form-label">Precio de la grúa</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      name="precioGrua"
+                      value={form.precioGrua}
+                      onChange={handleChange}
+                      placeholder="Ej. 800.00"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -873,7 +999,6 @@ const handleSubmit = async (e) => {
               />
             </div>
 
-            {/* Selects tipo Check Engine / ABS / Air Bag / Frenos / Aceite / Alternador */}
             {renderSiNoSelect("checkEngine", "Check Engine")}
             {renderSiNoSelect("abs", "Abs")}
             {renderSiNoSelect("airBag", "Air Bag")}
