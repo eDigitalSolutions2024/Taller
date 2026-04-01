@@ -8,6 +8,15 @@ export default function Navbar({ collapsed, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // === FACTURACION ===
+const [factOpen, setFactOpen] = useState(
+  location.pathname.startsWith("/facturacion")
+);
+useEffect(() => {
+  if (location.pathname.startsWith("/facturacion")) setFactOpen(true);
+}, [location.pathname]);
+
+
   // === CLIENTES ===
   const [clientesOpen, setClientesOpen] = useState(
     location.pathname.startsWith('/clientes')
@@ -364,6 +373,35 @@ useEffect(() => {
           </NavLink>
         )}
 
+
+        {/* === GRUPO: FACTURACIÓN === */}
+          <div className={`sidebar__group ${factOpen ? "open" : ""}`}>
+            <button
+              type="button"
+              className="sidebar__link sidebar__group-toggle"
+              onClick={() => setFactOpen(o => !o)}
+              aria-expanded={factOpen}
+              aria-controls="submenu-facturacion"
+              title="Facturación"
+            >
+              <span className="emoji">🧾</span>
+              <span className="label">Facturación</span>
+              {!collapsed && <span className="chev" aria-hidden>▾</span>}
+            </button>
+
+            <div id="submenu-facturacion" className="sidebar__sublinks">
+              <NavLink to="/facturacion" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Panel</span>
+              </NavLink>
+              <NavLink to="/facturacion/nueva" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Nueva factura</span>
+              </NavLink>
+              <NavLink to="/facturacion/consultar" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Consultar</span>
+              </NavLink>
+            </div>
+          </div>
+          {/* === FIN GRUPO FACTURACIÓN === */}
 
 
 

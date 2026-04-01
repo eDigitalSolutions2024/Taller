@@ -16,3 +16,6 @@ export const getCustomer = (id) =>
 // 👇 NUEVA: actualizar cliente
 export const updateCustomer = (id, payload) =>
   http.put(`/clientes/${id}`, payload);
+
+export const buscarClientesFacturacion = (q, limit = 20) =>
+  http.get(`/clientes/facturacion`, { params: { q, limit } });

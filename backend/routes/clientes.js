@@ -8,9 +8,6 @@ router.post("/", async (req, res) => {
   try {
     const body = { ...req.body };
 
-    // 🔴 Por ahora NO usamos facturación
-    delete body.facturacion;
-
     const cliente = await Cliente.create(body);
     res.status(201).json({ ok: true, data: cliente });
   } catch (err) {
@@ -46,6 +43,42 @@ router.get("/", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/clientes/facturacion?q=
+ * Regresa lista ligera para selector en NuevaFactura
+ */
+router.get("/facturacion", async (req, res) => {
+  try {
+    const { q = "", limit = 20 } = req.query;
+
+    const find = q
+      ? {
+          $or: [
+            { nombre: { $regex: q, $options: "i" } },
+            { apellidoPaterno: { $regex: q, $options: "i" } },
+            { apellidoMaterno: { $regex: q, $options: "i" } },
+            { email: { $regex: q, $options: "i" } },
+            { rfc: { $regex: q, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const items = await Cliente.find(find)
+      .sort({ updatedAt: -1 })
+      .limit(Number(limit))
+      .select(
+        "nombre apellidoPaterno apellidoMaterno email rfc regimenFiscal codigoPostalFiscal"
+      );
+
+    res.json({ ok: true, data: items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
+
 // GET /api/clientes/:id
 router.get("/:id", async (req, res) => {
   const c = await Cliente.findById(req.params.id);
@@ -57,9 +90,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const body = { ...req.body };
-
-    // 🔴 Tampoco actualizamos facturación por ahora
-    delete body.facturacion;
+ 
 
     const c = await Cliente.findByIdAndUpdate(req.params.id, body, {
       new: true,

@@ -46,6 +46,8 @@ const initial = {
   telefono: { lada: "", numero: "", extension: "" },
   celular: { lada: "", numero: "" },
   rfc: "",
+  regimenFiscal: "",
+  codigoPostalFiscal: "",
   direccion: {
     calle: "",
     numeroExterior: "",
@@ -260,7 +262,10 @@ export default function AltaCliente() {
     setMsg("");
     try {
       let payload = deepClone(form);
-
+      // Si no teclearon CP fiscal, úsalo desde la dirección de facturación
+if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal) {
+  payload.codigoPostalFiscal = payload.facturacion.direccion.codigoPostal;
+}
           // 👉 Por ahora usamos SOLO la dirección de facturación
     // y la guardamos en cliente.direccion
     if (payload.facturacion && payload.facturacion.direccion) {
@@ -803,6 +808,34 @@ export default function AltaCliente() {
             onChange={(e) => upd("rfc", e.target.value.toUpperCase())}
           />
         </div>
+        <div className="form-row">
+          <label>Régimen Fiscal</label>
+          <select
+            value={form.regimenFiscal ?? ""}
+            onChange={(e) => upd("regimenFiscal", e.target.value)}
+          >
+            <option value="">-- Seleccionar --</option>
+            <option value="601">601 - General de Ley Personas Morales</option>
+            <option value="603">603 - Personas Morales con Fines no Lucrativos</option>
+            <option value="605">605 - Sueldos y Salarios e Ingresos Asimilados a Salarios</option>
+            <option value="606">606 - Arrendamiento</option>
+            <option value="607">607 - Régimen de Enajenación o Adquisición de Bienes</option>
+            <option value="608">608 - Demás ingresos</option>
+            <option value="610">610 - Residentes en el Extranjero sin Establecimiento Permanente</option>
+            <option value="611">611 - Ingresos por Dividendos (socios y accionistas)</option>
+            <option value="612">612 - Personas Físicas con Actividades Empresariales y Profesionales</option>
+            <option value="614">614 - Ingresos por intereses</option>
+            <option value="615">615 - Régimen de los ingresos por obtención de premios</option>
+            <option value="616">616 - Sin obligaciones fiscales</option>
+            <option value="620">620 - Sociedades Cooperativas de Producción que optan por diferir sus ingresos</option>
+            <option value="621">621 - Incorporación Fiscal</option>
+            <option value="622">622 - Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras</option>
+            <option value="623">623 - Opcional para Grupos de Sociedades</option>
+            <option value="624">624 - Coordinados</option>
+            <option value="625">625 - Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas</option>
+            <option value="626">626 - Régimen Simplificado de Confianza</option>
+          </select>
+        </div>
 
         <div className="form-row">
           <label>Dirección (Calle)</label>
@@ -841,12 +874,10 @@ export default function AltaCliente() {
           />
         </div>
         <div className="form-row">
-          <label>Código Postal</label>
+          <label>Código Postal Fiscal</label>
           <input
-            value={form.facturacion?.direccion?.codigoPostal ?? ""}
-            onChange={(e) =>
-              upd("facturacion.direccion.codigoPostal", e.target.value)
-            }
+            value={form.codigoPostalFiscal ?? ""}
+            onChange={(e) => upd("codigoPostalFiscal", e.target.value)}
           />
         </div>
         <div className="form-row">

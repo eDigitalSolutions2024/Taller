@@ -40,7 +40,7 @@ const ContactoSchema = new Schema(
 
 const EmpresaSchema = new Schema(
   {
-    //razonSocial: { type: String, trim: true },
+    razonSocial: { type: String, trim: true },
     contacto: { type: ContactoSchema, default: undefined },
   },
   { _id: false }
@@ -95,6 +95,17 @@ const ClienteSchema = new Schema(
 
     // Fiscal/ubicación comunes
     rfc: { type: String, trim: true, uppercase: true },
+    // Fiscal CFDI (lo mínimo para timbrar)
+    regimenFiscal: {
+      type: String,
+      trim: true,
+      enum: [
+        "601","603","605","606","607","608","610","611",
+        "612","614","615","616","620","621","622","623",
+        "624","625","626"
+      ]
+    },
+    codigoPostalFiscal: { type: String, trim: true, default: "" },
     direccion: { type: DireccionSchema, default: undefined },
     facturacion: { type: FacturacionSchema, default: () => ({ mismaQueDireccion: true }) },
 

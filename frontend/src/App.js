@@ -1,11 +1,18 @@
+// src/App.js
 import React from "react";
-import 'bootstrap/dist/css/bootstrap.min.css';
+import "bootstrap/dist/css/bootstrap.min.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage";
 import AppLayout from "./layouts/AppLayout";
 import Dashboard from "./pages/Dashboard";
 
+// Facturación
+import FacturacionLayout from "./pages/facturacion/FacturacionLayout";
+import FacturacionPanel from "./pages/facturacion/FacturacionPanel";
+import NuevaFactura from "./pages/facturacion/NuevaFactura";
+import ConsultarFacturas from "./pages/facturacion/ConsultarFacturas";
+import ConfiguracionFiscal from "./pages/facturacion/ConfiguracionFiscal";
 // Clientes
 import ClientesLayout from "./pages/clientes/ClientesLayout";
 import AltaCliente from "./pages/clientes/AltaCliente";
@@ -33,7 +40,7 @@ import VehiculoConsultaCerradas from "./pages/vehiculo/VehiculosConsultaCerradas
 import VehiculoExportar from "./pages/vehiculo/VehiculosExportar";
 import VehiculoOrdenDetalle from "./pages/vehiculo/VehiculoOrdenDetalle";
 
-// Devoluciones
+// Devoluciones (pantallas internas)
 import DevDinero from "./pages/refaccionaria/devoluciones/dinero";
 import DevPieza from "./pages/refaccionaria/devoluciones/pieza";
 import DevVale from "./pages/refaccionaria/devoluciones/vale";
@@ -55,7 +62,7 @@ export default function App() {
         {/* Público */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* Zona privada */}
+        {/* Zona privada (CON Navbar / AppLayout) */}
         <Route
           path="/*"
           element={
@@ -74,8 +81,7 @@ export default function App() {
           <Route path="clientes/*" element={<ClientesLayout />}>
             <Route index element={<Navigate to="consulta" replace />} />
             <Route path="alta" element={<AltaCliente />} />
-            {/* misma pantalla para editar cliente */}
-            <Route path="alta/:id" element={<AltaCliente />} /> {/* 👈 CORREGIDO */}
+            <Route path="alta/:id" element={<AltaCliente />} />
             <Route path="consulta" element={<ConsultaClientes />} />
           </Route>
 
@@ -83,8 +89,7 @@ export default function App() {
           <Route path="proveedores/*" element={<ProveedoresLayout />}>
             <Route index element={<Navigate to="alta" replace />} />
             <Route path="alta" element={<AltaProveedor />} />
-            {/* misma pantalla para editar proveedor */}
-            <Route path="alta/:id" element={<AltaProveedor />} /> {/* 👈 NUEVO */}
+            <Route path="alta/:id" element={<AltaProveedor />} />
             <Route path="consultar" element={<ConsultaProveedores />} />
           </Route>
 
@@ -93,7 +98,10 @@ export default function App() {
             <Route index element={<Navigate to="entrada" replace />} />
             <Route path="entrada" element={<VehiculoEntrada />} />
             <Route path="consulta-ordenes" element={<VehiculoConsultaOrdenes />} />
-            <Route path="consulta-ordenes-cerradas" element={<VehiculoConsultaCerradas />} />
+            <Route
+              path="consulta-ordenes-cerradas"
+              element={<VehiculoConsultaCerradas />}
+            />
             <Route path="exportar" element={<VehiculoExportar />} />
             <Route path="orden/:id" element={<VehiculoOrdenDetalle />} />
           </Route>
@@ -115,7 +123,10 @@ export default function App() {
             </Route>
 
             <Route path="consultar" element={<ConsultarInventario />} />
-            <Route path="factura-proveedor" element={<ConsultarFacturaProveedor />} />
+            <Route
+              path="factura-proveedor"
+              element={<ConsultarFacturaProveedor />}
+            />
             <Route path="bd-codigos" element={<BDCodigos />} />
           </Route>
 
@@ -124,9 +135,20 @@ export default function App() {
 
           {/* Órdenes de compra */}
           <Route path="ordenes-compra" element={<OrdenesCompraList />} />
+
+          {/* ✅ Facturación (DENTRO del layout privado) */}
+          <Route path="facturacion/*" element={<FacturacionLayout />}>
+            <Route index element={<FacturacionPanel />} />
+            <Route path="nueva" element={<NuevaFactura />} />
+            <Route path="consultar" element={<ConsultarFacturas />} />
+            <Route path="configuracion-fiscal" element={<ConfiguracionFiscal />} />
+          </Route>
+
+          {/* Si quieres, fallback interno privado */}
+          <Route path="*" element={<Navigate to="dashboard" replace />} />
         </Route>
 
-        {/* Fallback */}
+        {/* Fallback global */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
