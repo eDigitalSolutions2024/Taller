@@ -193,10 +193,30 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
     }
 
     // Diagnóstico
-    if (diagnosticoTecnico !== undefined) {
-      vehiculo.diagnosticoTecnico = diagnosticoTecnico;
+   if (diagnosticoTecnico !== undefined) {
+  const textoNuevo = String(diagnosticoTecnico || '').trim();
+
+  if (textoNuevo) {
+    // 🔥 ESTA LÍNEA ARREGLA EL ERROR
+    if (!Array.isArray(vehiculo.historialDiagnosticos)) {
+      vehiculo.historialDiagnosticos = [];
     }
 
+    const ultimo =
+      vehiculo.historialDiagnosticos[vehiculo.historialDiagnosticos.length - 1];
+
+    const ultimoTexto = String(ultimo?.texto || '').trim();
+
+    if (textoNuevo !== ultimoTexto) {
+      vehiculo.historialDiagnosticos.push({
+        texto: textoNuevo,
+        fecha: new Date(),
+      });
+    }
+  }
+
+  vehiculo.diagnosticoTecnico = diagnosticoTecnico;
+}
     // Refacciones solicitadas (las que ves en la tabla)
     if (Array.isArray(refacciones)) {
       // Aquí ya pueden venir requiereOC, ocGenerada, numeroOC, etc.

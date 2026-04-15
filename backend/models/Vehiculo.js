@@ -130,6 +130,15 @@ servicioReparacion: {
     // ===== Requisición y diagnóstico =====
     diagnosticoTecnico: { type: String, default: "" },
 
+    historialDiagnosticos: [
+  {
+    texto: { type: String, default: "" },
+    fecha: { type: Date, default: Date.now },
+    usuario: { type: String, default: "" },
+  }
+],
+
+
     refaccionesSolicitadas: [
       {
         cant: { type: Number, default: 0 },
@@ -224,6 +233,9 @@ manoObra: [
 // ===== Observaciones finales =====
 observacionesExternas: { type: String, default: "" },
 observacionesInternas: { type: String, default: "" },
+
+
+
   },
   {
     timestamps: true, // createdAt, updatedAt

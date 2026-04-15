@@ -32,6 +32,10 @@ app.use(express.json());
 const empleadosRoutes = require('./routes/empleados');
 const ordenesCompraRoutes = require('./routes/ordenesCompra');
 const facturacionRoutes = require("./routes/facturacion");
+const diagnosticosCatalogoRoutes = require('./routes/diagnosticosCatalogo');
+
+
+
 app.use("/api/facturacion", facturacionRoutes);
 
 
@@ -67,6 +71,9 @@ app.use('/api/ordenes-compra', ordenesCompraRoutes);
 app.use('/api', require('./routes/facturas')); // ahora existe GET /api/facturas-proveedor
  
 app.use("/api/fiscal-config", require("./routes/fiscal_config"));
+
+app.use('/api/diagnosticos-catalogo', diagnosticosCatalogoRoutes);
+console.log('✅ Ruta /api/diagnosticos-catalogo montada');
 
 const generarXmlRoutes = require("./routes/generar_xml");
 app.use("/api/generar-xml", require("./routes/generar_xml"));

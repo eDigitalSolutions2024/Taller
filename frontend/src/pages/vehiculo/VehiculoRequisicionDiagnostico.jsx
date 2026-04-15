@@ -27,11 +27,16 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [savingLine, setSavingLine] = useState(false); // para el botón +
 
+ const [historialDiagnosticos, setHistorialDiagnosticos] = useState([]);
+
+
   // Carga inicial desde la orden
   useEffect(() => {
     if (!orden) return;
 
     setDiagnostico(orden.diagnosticoTecnico || "");
+
+    setHistorialDiagnosticos(orden.historialDiagnosticos || []);
 
     // Refacciones solicitadas (arriba)
     const refConEstatus = (orden.refaccionesSolicitadas || []).map((r) => ({
@@ -47,6 +52,9 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     // Cargos en orden (lo que ya viene del backend)
     setCargos(orden.cargosEnOrden || []);
   }, [orden]);
+
+
+ 
 
   const handleLineChange = (e) => {
     const { name, value } = e.target;
@@ -286,6 +294,30 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
     }
   };
 
+const guardarDiagnosticoEnHistorial = async () => {
+  if (!diagnostico.trim()) {
+    alert("No hay diagnóstico para guardar en historial.");
+    return;
+  }
+
+  try {
+    const res = await saveRequisicionDiagnostico(orden._id, {
+      diagnosticoTecnico: diagnostico,
+      refacciones: rows,
+      guardarEnHistorial: true,
+    });
+
+    const vAct = res.data.vehiculo;
+    if (onSaved) onSaved(vAct);
+
+    alert("Diagnóstico guardado en el historial del vehículo.");
+  } catch (err) {
+    console.error(err);
+    alert("Error al guardar el diagnóstico en historial.");
+  }
+};
+
+
   return (
     <div className="card">
       <div className="card-body">
@@ -299,6 +331,54 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
               value={diagnostico}
               onChange={(e) => setDiagnostico(e.target.value)}
             />
+
+            <div className="mt-2">
+  <button
+    type="button"
+    className="btn btn-outline-success btn-sm"
+    onClick={guardarDiagnosticoEnHistorial}
+  >
+    Guardar en historial del vehículo
+  </button>
+</div>
+
+<div
+  className="border mt-2 p-2"
+  style={{ maxHeight: "180px", overflowY: "auto" }}
+>
+  {historialDiagnosticos.length === 0 && (
+    <small className="text-muted">
+      Este vehículo aún no tiene diagnósticos guardados en historial.
+    </small>
+  )}
+
+  {historialDiagnosticos
+    .slice()
+    .reverse()
+    .map((d, idx) => (
+      <div
+        key={idx}
+        className="d-flex justify-content-between align-items-start mb-2"
+      >
+        <div style={{ maxWidth: "78%" }}>
+          <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
+          <small className="text-muted">
+            {d.fecha ? new Date(d.fecha).toLocaleString("es-MX") : ""}
+          </small>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          onClick={() => setDiagnostico(d.texto || "")}
+        >
+          Usar
+        </button>
+      </div>
+    ))}
+</div>
+
+
           </div>
 
           <div className="mt-4">
