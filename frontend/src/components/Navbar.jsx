@@ -408,11 +408,11 @@ useEffect(() => {
 
 
         <NavLink to="/reportes" className="sidebar__link" title="Reportes">
-          <span className="emoji">📈</span><span className="label">Reportes</span>
+          {/*<span className="emoji">📈</span><span className="label">Reportes</span>*/}
         </NavLink>
 
         <NavLink to="/ajustes" className="sidebar__link" title="Ajustes">
-          <span className="emoji">⚙️</span><span className="label">Ajustes</span>
+          {/*<span className="emoji">⚙️</span><span className="label">Ajustes</span>*/}
         </NavLink>
       </nav>
 

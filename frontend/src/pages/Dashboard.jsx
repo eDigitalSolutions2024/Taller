@@ -2,11 +2,11 @@ import { NavLink } from "react-router-dom";
 import "../styles/dashboard.css";
 
 const tiles = [
-  { key: "ordenes",   title: "Órdenes de Servicio", desc: "Crear y gestionar órdenes", to: "/ordenes",   emoji: "📋" },
+  { key: "ordenes",   title: "Órdenes de Servicio", desc: "Crear y gestionar órdenes", to: "/vehiculo/consulta-ordenes",   emoji: "📋" },
   { key: "clientes",  title: "Clientes",            desc: "Altas, historial y contacto", to: "/clientes", emoji: "👤" },
-  { key: "inventario",title: "Inventario",          desc: "Refacciones y existencias",   to: "/inventario", emoji: "🧰" },
-  { key: "reportes",  title: "Reportes",            desc: "Ingresos y métricas",         to: "/reportes",  emoji: "📈" },
-  { key: "ajustes",   title: "Ajustes",             desc: "Usuarios y taller",           to: "/ajustes",   emoji: "⚙️" },
+  { key: "inventario",title: "Inventario",          desc: "Refacciones y existencias",   to: "/refaccionaria/consultar", emoji: "🧰" },
+  /*{ key: "reportes",  title: "Reportes",            desc: "Ingresos y métricas",         to: "/reportes",  emoji: "📈" },
+  { key: "ajustes",   title: "Ajustes",             desc: "Usuarios y taller",           to: "/ajustes",   emoji: "⚙️" },*/
 ];
 
 export default function Dashboard() {
@@ -18,7 +18,7 @@ export default function Dashboard() {
           <h1 className="dash-title">Bienvenido 👋</h1>
           <p className="dash-subtitle">AutoServicio D y G · Panel principal</p>
           <div className="dash-actions">
-            <NavLink to="/ordenes" className="btn btn-primary">Nueva orden</NavLink>
+            <NavLink to="/vehiculo" className="btn btn-primary">Nueva orden</NavLink>
             <NavLink to="/clientes" className="btn btn-ghost">Nuevo cliente</NavLink>
           </div>
         </div>
