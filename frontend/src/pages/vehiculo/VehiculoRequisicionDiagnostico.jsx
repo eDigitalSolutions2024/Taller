@@ -66,30 +66,50 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
 
   // Botón +: agrega refacción y guarda en backend
   const handleAddLine = async () => {
-    const cantNum = Number(line.cant) || 0;
-    const puNum = Number(line.precioUnitario) || 0;
-    const importe = cantNum * puNum;
+  const cantNum = Number(line.cant) || 0;
+  const puNum = Number(line.precioUnitario) || 0;
+  const importe = cantNum * puNum;
 
-    if (!cantNum || !line.refaccion.trim()) {
-      alert("Captura al menos Cantidad y Refacción.");
-      return;
-    }
+  if (!cantNum || !line.refaccion.trim()) {
+    alert("Captura al menos Cantidad y Refacción.");
+    return;
+  }
 
-    const nueva = {
-      ...line,
-      cant: cantNum,
-      precioUnitario: puNum,
-      importeTotal: importe,
-      estatus: "PENDIENTE",
-      requiereOC: false,
-      ocGenerada: false,
-      numeroOC: null,
-      ordenCompra: null,
-    };
+  const nueva = {
+    ...line,
+    cant: cantNum,
+    precioUnitario: puNum,
+    importeTotal: importe,
+    estatus: "PENDIENTE",
+    requiereOC: false,
+    ocGenerada: false,
+    numeroOC: null,
+    ordenCompra: null,
+  };
 
-    const nuevasFilas = [...rows, nueva];
+  const nuevasFilas = [...rows, nueva];
 
-    setRows(nuevasFilas);
+  try {
+    setSavingLine(true);
+
+    const res = await saveRequisicionDiagnostico(orden._id, {
+      diagnosticoTecnico: diagnostico,
+      refacciones: nuevasFilas,
+    });
+
+    const vAct = res.data.vehiculo;
+
+    setRows((vAct.refaccionesSolicitadas || []).map((r) => ({
+      ...r,
+      estatus: r.estatus || "PENDIENTE",
+      requiereOC: !!r.requiereOC,
+      ocGenerada: !!r.ocGenerada,
+      numeroOC: r.numeroOC || null,
+      ordenCompra: r.ordenCompra || null,
+    })));
+
+    if (onSaved) onSaved(vAct);
+
     setLine({
       cant: "",
       unidad: "",
@@ -104,21 +124,13 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       core: "",
       observaciones: "",
     });
-
-    try {
-      setSavingLine(true);
-      await saveRequisicionDiagnostico(orden._id, {
-        diagnosticoTecnico: diagnostico,
-        refacciones: nuevasFilas,
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar la refacción. Revisa conexión / backend.");
-      setRows(rows); // revertimos
-    } finally {
-      setSavingLine(false);
-    }
-  };
+  } catch (err) {
+    console.error(err);
+    alert("Error al guardar la refacción. Revisa conexión / backend.");
+  } finally {
+    setSavingLine(false);
+  }
+};
 
   const handleRemoveRow = (idx) => {
     setRows((prev) => prev.filter((_, i) => i !== idx));
