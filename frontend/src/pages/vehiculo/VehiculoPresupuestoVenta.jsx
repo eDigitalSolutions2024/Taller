@@ -34,6 +34,8 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved }) {
   const [obsExternas, setObsExternas] = useState("");
   const [obsInternas, setObsInternas] = useState("");
 
+  const [editingCell, setEditingCell] = useState ({row: null, field: null});
+
   useEffect(() => {
     if (!orden) return;
 
@@ -117,6 +119,25 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved }) {
     setMoLine((prev) => ({ ...prev, [name]: value }));
   };
 
+
+  const inputProps = (idx, field, defaultValue) => ({
+  defaultValue: defaultValue,
+  autoFocus: true,
+  className: "form-control form-control-sm",
+  onBlur: (e) => handleUpdate(idx, field, e.target.value),
+  onKeyDown: (e) => {
+    if (e.key === 'Enter') handleUpdate(idx, field, e.target.value);
+    if (e.key === 'Escape') setEditingCell({ row: null, field: null });
+  }
+  });
+
+  const handleUpdate = (idx, field, value) => {
+  const updatedRows = [...presRows];
+  updatedRows[idx][field] = value;
+  setPresRows(updatedRows);
+  setEditingCell({ row: null, field: null });
+};
+
   const removePresRow = (idx) => {
     setPresRows((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -160,8 +181,30 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved }) {
   };
 
   // Botones de la parte de arriba: por ahora solo Autorizar hace algo real
-  const handleGuardarPresupuesto = () => {
-    alert("Luego conectamos este botón al backend para guardar presupuesto.");
+  const handleGuardarPresupuesto = async () => {
+    try{
+      const payload = {
+        dirigidoA,
+        departamento,
+        observCotizacion,
+        presupuesto: presRows,
+        ventaCliente: ventaRows,
+        manoObra: moRows,
+        observacionesExternas: obsExternas,
+        observacionesInternas: obsInternas
+      };
+
+      const response = await savePresupuestoVenta(orden._id, payload);
+
+      if(response.data.ok){
+        if(onSaved) onSaved(response.data.vehiculo);
+        alert("Se ha guardado con exito")
+      }
+    }
+    catch(err){
+      console.error("Error al guardar:", err);
+      alert("No se pudo conectar con el servidor")
+    }
   };
 
   const handleEnviar = () => {
@@ -307,18 +350,93 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved }) {
 
               {presRows.map((r, idx) => (
                 <tr key={idx}>
-                  <td className="text-center">{r.cant}</td>
-                  <td>{r.concepto}</td>
-                  <td>{r.refaccion}</td>
-                  <td className="text-center">{r.tipo}</td>
-                  <td className="text-center">{r.marca}</td>
-                  <td className="text-center">{r.proveedor}</td>
-                  <td className="text-center">{r.codigo}</td>
-                  <td className="text-end">{formatMoney(r.precioCompra)}</td>
-                  <td className="text-center">{r.tiempoEntrega}</td>
-                  <td className="text-center">{r.horasMO}</td>
-                  <td className="text-end">{formatMoney(r.precioVenta)}</td>
-                  <td>{r.observInt}</td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'cant'})}>
+                    {editingCell.row === idx && editingCell.field === 'cant' ? (
+                      <input  {...inputProps(idx,'cant',r.cant)}/>
+                    ) : (
+                      r.cant
+                    )}
+                  </td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'concepto'})}>
+                    {editingCell.row === idx && editingCell.field === 'concepto' ? (
+                      <input  {...inputProps(idx,'concepto',r.concepto)}/>
+                    ) : (
+                      r.concepto
+                    )}
+                  </td> 
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'refaccion'})}>
+                    {editingCell.row === idx && editingCell.field === 'refaccion' ? (
+                      <input  {...inputProps(idx,'refaccion',r.refaccion)}/>
+                    ) : (
+                      r.refaccion
+                    )}
+                  </td>
+                  <td 
+                    style={{ width: "120px" }}
+                    onDoubleClick={() => setEditingCell({ row: idx, field: 'tipo' })}
+                  >
+                    {editingCell.row === idx && editingCell.field === 'tipo' ? (
+                      <select
+                        className="form-select form-select-sm"
+                        value={r.tipo}
+                        autoFocus
+                        onChange={(e) => handleUpdate(idx, 'tipo', e.target.value)}
+                        onBlur={() => setEditingCell({ row: null, field: null })}
+                      >
+                        <option value="">Selec...</option>
+                        <option value="Original">Original</option>
+                        <option value="Alterna">Alterna</option>
+                      </select>
+                    ) : (
+                      <div style={{ cursor: 'pointer', minHeight: '30px' }}>
+                        {r.tipo || <span className="text-muted">Seleccionar...</span>}
+                      </div>
+                    )}
+                  </td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'marca'})}>
+                    {editingCell.row === idx && editingCell.field === 'marca' ? (
+                      <input  {...inputProps(idx,'marca',r.marca)}/>
+                    ) : (
+                      r.marca
+                    )}
+                  </td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'proveedor'})}>
+                    {editingCell.row === idx && editingCell.field === 'proveedor' ? (
+                      <input  {...inputProps(idx,'proveedor',r.proveedor)}/>
+                    ) : (
+                      r.proveedor
+                    )} 
+                  </td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'codigo'})}>
+                    {editingCell.row === idx && editingCell.field === 'codigo' ? (
+                      <input  {...inputProps(idx,'codigo',r.codigo)}/>
+                    ) : (
+                      r.codigo
+                    )} 
+                  </td>
+                  <td className="text-end" onDoubleClick={() => setEditingCell({row: idx, field:'precioCompra'})}>
+                    {editingCell.row === idx && editingCell.field === 'precioCompra' ? (
+                      <input  {...inputProps(idx,'precioCompra',r.precioCompra)}/>
+                    ) : (
+                      formatMoney(r.precioCompra)
+                    )} 
+                  </td>
+                  <td className="text-center" onDoubleClick={() => setEditingCell({row: idx, field:'tiempoEntrega'})}>
+                    {editingCell.row === idx && editingCell.field === 'tiempoEntrega' ? (
+                      <input  {...inputProps(idx,'tiempoEntrega',r.tiempoEntrega)}/>
+                    ) : (
+                      r.tiempoEntrega
+                    )} 
+                  </td>
+                  <td className="text-center">{r.horasMO}
+
+                  </td>
+                  <td className="text-end">{formatMoney(r.precioVenta)}
+
+                  </td>
+                  <td>{r.observInt}
+
+                  </td>
                   <td className="text-center">
                     <button
                       type="button"

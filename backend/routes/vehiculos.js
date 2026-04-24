@@ -253,6 +253,9 @@ router.put('/:id/presupuesto-venta', async (req, res) => {
       observacionesExternas,
       observacionesInternas,
       estadoOrden,
+      dirigidoA,
+      departamento,
+      observCotizacion
     } = req.body;
 
     const vehiculo = await Vehiculo.findById(id);
@@ -280,9 +283,17 @@ router.put('/:id/presupuesto-venta', async (req, res) => {
       vehiculo.observacionesInternas = observacionesInternas;
     }
 
+    if(typeof dirigidoA === 'string') vehiculo.dirigidoA = dirigidoA;
+
+    if(typeof departamento === 'string') vehiculo.departamento = departamento;
+
+    if(typeof observCotizacion === 'string') vehiculo.observCotizacion = observCotizacion;
+
     if (estadoOrden) {
       vehiculo.estadoOrden = estadoOrden;
     }
+
+
 
     await vehiculo.save();
 

@@ -35,6 +35,11 @@ const vehiculoSchema = new Schema(
     fechaRecepcion: Date,
     horaRecepcion: String,
 
+    //Presupuesto
+    dirigidoA: { type: String, default: ""},
+    departamento: { type: String, default: ""},
+    observCotizacion: { type: String, default: ""},
+
     // ----- Datos de cliente / gobierno (snapshot en la orden) -----
     // Particular
     nombreCliente: String,
