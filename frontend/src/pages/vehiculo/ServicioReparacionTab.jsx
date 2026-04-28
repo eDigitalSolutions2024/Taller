@@ -76,23 +76,40 @@ export default function ServicioReparacionTab({
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!ordenId) return;
+  e.preventDefault();
+  if (!ordenId) return;
 
-    try {
-      setSaving(true);
-      // mandamos: { serviciosSeleccionados, infoLlantas, revisionFallas }
-      const res = await updateServicioReparacion(ordenId, form);
-      alert("Orden de Servicio Iniciada.");
-      if (onSaved) onSaved(res.data.vehiculo);
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar Servicio / Reparación");
-    } finally {
-      setSaving(false);
-    }
-  };
+  try {
+    setSaving(true);
 
+    // 💡 CREAMOS LA LISTA DE MANO DE OBRA BASADA EN EL CATÁLOGO
+    // Esto transforma ["S1", "S2"] en [{concepto: "Cambio de Aceite"}, {concepto: "Afinación"}]
+    const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
+      const srv = catalogoServicios.find((s) => s.codigo === codigo);
+      return {
+        concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`
+      };
+    });
+
+    // Construimos el objeto final
+    const payload = {
+      ...form, // incluye serviciosSeleccionados, infoLlantas, revisionFallas
+      manoObraGenerada 
+    };
+
+    // Llamada a la API (la que ya tienes en vehiculos.js)
+    const res = await updateServicioReparacion(ordenId, payload);
+    
+    alert("Orden iniciada. Los servicios se enviaron al presupuesto.");
+    
+    if (onSaved) onSaved(res.data.vehiculo);
+  } catch (err) {
+    console.error(err);
+    alert("Error al guardar el diagnóstico");
+  } finally {
+    setSaving(false);
+  }
+};
   /* =========================
    *  Render
    * ========================= */

@@ -132,8 +132,33 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
   }
 };
 
-  const handleRemoveRow = (idx) => {
-    setRows((prev) => prev.filter((_, i) => i !== idx));
+  const handleRemoveRow = async (idx) => {
+    // 1. Confirmación opcional para evitar borrados accidentales
+    if (!window.confirm("¿Estás seguro de eliminar esta refacción?")) return;
+
+    // 2. Crear el nuevo arreglo sin la fila seleccionada
+    const nuevasFilas = rows.filter((_, i) => i !== idx);
+
+    // 3. Actualizar localmente para rapidez visual
+    setRows(nuevasFilas);
+
+    try {
+      // 4. Persistir en el servidor
+      const res = await saveRequisicionDiagnostico(orden._id, {
+        diagnosticoTecnico: diagnostico,
+        refacciones: nuevasFilas,
+      });
+
+      // 5. Actualizar el estado global de la orden
+      const vAct = res.data.vehiculo;
+      if (onSaved) onSaved(vAct);
+      
+    } catch (err) {
+      console.error("Error al eliminar refacción:", err);
+      alert("No se pudo eliminar la refacción del servidor.");
+      // Revertir cambio local si falla el servidor para mantener sincronía
+      setRows(rows);
+    }
   };
 
   const handleEditRow = (idx) => {
@@ -146,14 +171,15 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       marca: r.marca || "",
       proveedor: r.proveedor || "",
       codigo: r.codigo || "",
-      precioUnitario:
-        r.precioUnitario != null ? String(r.precioUnitario) : "",
+      precioUnitario: r.precioUnitario != null ? String(r.precioUnitario) : "",
       moneda: r.moneda || "MN",
       tiempoEntrega: r.tiempoEntrega || "",
       core: r.core || "",
       observaciones: r.observaciones || "",
     });
-    handleRemoveRow(idx);
+    
+    // Solo filtramos localmente para que el usuario "re-agregue" la fila editada
+    setRows(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleSetStatus = async (idx, estatus) => {
@@ -162,17 +188,25 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
       i === idx ? { ...r, estatus } : r
     );
 
+    // Actualización local inmediata para feedback visual
     setRows(nuevasFilas);
 
     try {
-      await saveRequisicionDiagnostico(orden._id, {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
       });
+
+      // ✅ CLAVE: Obtener el vehículo actualizado del backend
+      const vAct = res.data.vehiculo;
+
+      // ✅ CLAVE: Notificar al padre para que la prop 'orden' se actualice globalmente
+      if (onSaved) onSaved(vAct);
+
     } catch (err) {
       console.error(err);
       alert("Error al actualizar el estatus de la refacción.");
-      setRows(prevRows);
+      setRows(prevRows); // Revertir si falla
     }
   };
 
@@ -389,7 +423,6 @@ const guardarDiagnosticoEnHistorial = async () => {
       </div>
     ))}
 </div>
-
 
           </div>
 

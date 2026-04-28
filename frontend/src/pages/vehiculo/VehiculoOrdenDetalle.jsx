@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   getVehiculoById,
+  getEmpleados,
   openOperativoPdf,
   openImprimirPdf,
 } from "../../api/vehiculos";
@@ -20,25 +21,38 @@ export default function VehiculoOrdenDetalle() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("datos"); // 'datos' | 'servicio' | 'req' | 'presupuesto' | 'general'
   const [ordenIniciada, setOrdenIniciada] = useState(false);
+  const [empleados, setEmpleados] = useState([]);
 
   useEffect(() => {
-    const load = async () => {
+  const load = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      // 1. Cargamos primero la orden (lo más importante)
+      const resOrden = await getVehiculoById(id);
+      const v = resOrden.data.vehiculo;
+      setOrden(v);
+      setOrdenIniciada(!!v.ordenIniciada);
+
+      // 2. Intentamos cargar empleados por separado
       try {
-        setLoading(true);
-        setError("");
-        const res = await getVehiculoById(id);
-        const v = res.data.vehiculo;
-        setOrden(v);
-        setOrdenIniciada(!!v.ordenIniciada);
-      } catch (err) {
-        console.error(err);
-        setError("No se pudo cargar la orden.");
-      } finally {
-        setLoading(false);
+        const resEmpleados = await getEmpleados();
+        setEmpleados(resEmpleados.data.empleados || resEmpleados.data);
+      } catch (empErr) {
+        console.warn("No se pudieron cargar los empleados (401), pero la orden sí cargó.");
+        // Opcional: setEmpleados([]) para asegurar que no sea undefined
       }
-    };
-    load();
-  }, [id]);
+
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo cargar la orden principal.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  load();
+}, [id]);
 
   // cuando guardas en "Servicio o Reparación"
   const handleServicioSaved = (vehiculoActualizado) => {
@@ -154,6 +168,7 @@ export default function VehiculoOrdenDetalle() {
       {tab === "presupuesto" && ordenIniciada && (
           <VehiculoPresupuestoVenta
             orden={orden}
+            empleados={empleados}
             onSaved={(vActualizado) => setOrden(vActualizado)}
           />
         )}
@@ -165,23 +180,25 @@ export default function VehiculoOrdenDetalle() {
 
 
       {/* Botones debajo: Imprimir y Operativo */}
-      <div className="text-center my-3">
-        <button
-          type="button"
-          className="btn btn-secondary me-2"
-          onClick={() => openImprimirPdf(orden._id)}
-        >
-          Imprimir
-        </button>
+      {(tab === "datos" || tab === "servicio") && (
+        <div className="text-center my-3">
+          <button
+            type="button"
+            className="btn btn-secondary me-2"
+            onClick={() => openImprimirPdf(orden._id)}
+          >
+            Imprimir
+          </button>
 
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => openOperativoPdf(orden._id)}
-        >
-          Operativo
-        </button>
-      </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => openOperativoPdf(orden._id)}
+          >
+            Operativo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

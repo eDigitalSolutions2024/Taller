@@ -8,6 +8,7 @@ const { proteger, requiereRol } = require('../middleware/auth');   // 👈 NUEVO
 
 const { streamVehiculoOperativoPdf } = require('../service/VehiculoOperativoPdf');
 const { streamVehiculoOrdenPdf } = require('../service/vehiculoOrdenPdf');
+const { generarPresupuestoPDF } = require('../service/vehiculoPresupuestoPDF');
 
 
 // 👇 Helper para generar folio de OC
@@ -154,20 +155,44 @@ router.get('/ordenes', async (req, res) => {
 router.put('/:id/servicio', async (req, res) => {
   try {
     const { servicioReparacion } = req.body;
-
-    const vehiculo = await Vehiculo.findByIdAndUpdate(
-      req.params.id,
-      {
-        servicioReparacion,
-        ordenIniciada: true,
-        estadoOrden: 'PENDIENTE_REFACCIONARIA',  // 👈 mover de CAPTURA a REFACCIONARIA
-      },
-      { new: true }
-    );
+    
+    // 1. Buscamos el vehículo/orden primero
+    const vehiculo = await Vehiculo.findById(req.params.id);
 
     if (!vehiculo) {
       return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
     }
+
+    // 2. Actualizamos los datos básicos del diagnóstico
+    vehiculo.servicioReparacion = servicioReparacion;
+    vehiculo.ordenIniciada = true;
+    vehiculo.estadoOrden = 'PENDIENTE_REFACCIONARIA';
+
+    // 3. 💡 SINCRONIZACIÓN CON MANO DE OBRA
+    // Si desde el frontend mandamos 'manoObraGenerada'
+    if (servicioReparacion.manoObraGenerada && servicioReparacion.manoObraGenerada.length > 0) {
+      
+      servicioReparacion.manoObraGenerada.forEach(nuevoItem => {
+        // Evitamos duplicar: solo agregamos si el concepto no existe en la tabla de mano de obra
+        const existe = vehiculo.manoObra.some(
+          item => item.concepto.toLowerCase() === nuevoItem.concepto.toLowerCase()
+        );
+        
+        if (!existe) {
+          // Si no existe, lo agregamos al arreglo que lee la tabla de presupuesto
+          vehiculo.manoObra.push({
+            concepto: nuevoItem.concepto,
+            mecanico: "", // Se queda vacío para asignar en presupuesto
+            horas: 1,
+            fechaPago: new Date(),
+            observaciones: "Generado desde diagnóstico"
+          });
+        }
+      });
+    }
+
+    // 4. Guardamos los cambios
+    await vehiculo.save();
 
     return res.json({ ok: true, vehiculo });
   } catch (err) {
@@ -486,6 +511,24 @@ router.put('/:id/cerrar', async (req, res) => {
   } catch (err) {
     console.error('Error cerrando orden:', err);
     return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
+  }
+});
+
+// GET /api/vehiculos/:id/presupuesto-pdf
+router.get('/:id/presupuesto-pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vehiculo = await Vehiculo.findById(id);
+
+    if (!vehiculo) {
+      return res.status(404).json({ success: false, message: 'Orden no encontrada' });
+    }
+
+    // Llamamos al nuevo servicio
+    await generarPresupuestoPDF(res, vehiculo);
+  } catch (err) {
+    console.error('Error generando PDF de presupuesto:', err);
+    res.status(500).json({ success: false, message: 'Error al generar PDF' });
   }
 });
 

@@ -51,7 +51,7 @@ router.post(
  * ?puesto=mecanico
  * Cualquier usuario autenticado puede verlos (si quieres)
  */
-router.get('/', proteger, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const filtros = {};
 

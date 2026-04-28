@@ -80,7 +80,10 @@ function Empleados() {
   }
 
   async function handleSubmit(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (cargando) return;
+
+    console.log(form);
     try {
       setCargando(true);
       setError("");
@@ -96,7 +99,8 @@ function Empleados() {
         await crearEmpleado(form);
       }
 
-      handleCancelarEdicion();
+      setForm(emptyForm);
+      setEditandoId(null);
       await cargarEmpleados();
     } catch (err) {
       console.error(err);
