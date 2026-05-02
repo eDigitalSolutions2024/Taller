@@ -4,7 +4,7 @@ import { updateServicioReparacion } from "../../api/vehiculos";
 import { fetchServiciosTaller } from "../../api/codigos";
 
 const emptyServicio = {
-  serviciosSeleccionados: [],   // ej. ["S1", "S2"]
+  serviciosSeleccionados: [],
   infoLlantas: "",
   revisionFallas: "",
 };
@@ -13,36 +13,28 @@ export default function ServicioReparacionTab({
   ordenId,
   initialData,
   onSaved,
+  yaCerrada // 👈 Prop fundamental para el bloqueo
 }) {
   const [form, setForm] = useState(emptyServicio);
   const [saving, setSaving] = useState(false);
-
   const [catalogoServicios, setCatalogoServicios] = useState([]);
   const [cargandoServicios, setCargandoServicios] = useState(false);
 
-  /* =========================
-   *  Precargar datos guardados
-   * ========================= */
   useEffect(() => {
     if (initialData) {
-      setForm((prev) => ({
-        ...prev,
+      setForm({
         serviciosSeleccionados: initialData.serviciosSeleccionados || [],
         infoLlantas: initialData.infoLlantas || "",
         revisionFallas: initialData.revisionFallas || "",
-      }));
+      });
     }
   }, [initialData]);
 
-  /* =========================
-   *  Catálogo de servicios (Mongo)
-   * ========================= */
   useEffect(() => {
     const cargarServicios = async () => {
       try {
         setCargandoServicios(true);
-        const servicios = await fetchServiciosTaller(); // /codigos/options?tipo=servicio
-        console.log("Servicios taller (tab) =>", servicios);
+        const servicios = await fetchServiciosTaller();
         setCatalogoServicios(servicios);
       } catch (err) {
         console.error("Error cargando servicios:", err);
@@ -51,19 +43,20 @@ export default function ServicioReparacionTab({
         setCargandoServicios(false);
       }
     };
-
     cargarServicios();
   }, []);
 
   /* =========================
-   *  Handlers
+   * Handlers (Protegidos)
    * ========================= */
   const handleChangeText = (e) => {
+    if (yaCerrada) return; // 🔒 Bloqueo funcional
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const toggleServicio = (codigoServicio) => {
+    if (yaCerrada) return; // 🔒 Bloqueo funcional
     setForm((prev) => {
       const yaEsta = prev.serviciosSeleccionados.includes(codigoServicio);
       return {
@@ -76,49 +69,43 @@ export default function ServicioReparacionTab({
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!ordenId) return;
+    e.preventDefault();
+    if (!ordenId || yaCerrada) return; // 🔒 No permitir envío si está cerrada
 
-  try {
-    setSaving(true);
+    try {
+      setSaving(true);
+      const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
+        const srv = catalogoServicios.find((s) => s.codigo === codigo);
+        return {
+          concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`
+        };
+      });
 
-    // 💡 CREAMOS LA LISTA DE MANO DE OBRA BASADA EN EL CATÁLOGO
-    // Esto transforma ["S1", "S2"] en [{concepto: "Cambio de Aceite"}, {concepto: "Afinación"}]
-    const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
-      const srv = catalogoServicios.find((s) => s.codigo === codigo);
-      return {
-        concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`
+      const payload = {
+        ...form,
+        manoObraGenerada 
       };
-    });
 
-    // Construimos el objeto final
-    const payload = {
-      ...form, // incluye serviciosSeleccionados, infoLlantas, revisionFallas
-      manoObraGenerada 
-    };
+      const res = await updateServicioReparacion(ordenId, payload);
+      alert("Orden iniciada. Los servicios se enviaron al presupuesto.");
+      if (onSaved) onSaved(res.data.vehiculo);
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el diagnóstico");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    // Llamada a la API (la que ya tienes en vehiculos.js)
-    const res = await updateServicioReparacion(ordenId, payload);
-    
-    alert("Orden iniciada. Los servicios se enviaron al presupuesto.");
-    
-    if (onSaved) onSaved(res.data.vehiculo);
-  } catch (err) {
-    console.error(err);
-    alert("Error al guardar el diagnóstico");
-  } finally {
-    setSaving(false);
-  }
-};
-  /* =========================
-   *  Render
-   * ========================= */
   return (
     <form onSubmit={handleSubmit}>
       <div className="card">
-        <div className="card-header fw-bold">Servicio o Reparación</div>
+        <div className="card-header fw-bold d-flex justify-content-between align-items-center">
+          Servicio o Reparación
+          {yaCerrada && <span className="badge bg-secondary">Solo Lectura</span>}
+        </div>
         <div className="card-body">
-          {/* ==== Tabla de servicios dinámicos con checkbox ==== */}
+          
           <div className="table-responsive mb-3">
             <table className="table table-bordered table-sm">
               <thead>
@@ -129,83 +116,71 @@ export default function ServicioReparacionTab({
               </thead>
               <tbody>
                 {cargandoServicios && (
-                  <tr>
-                    <td colSpan={2}>Cargando servicios...</td>
-                  </tr>
+                  <tr><td colSpan={2}>Cargando servicios...</td></tr>
                 )}
 
-                {!cargandoServicios && catalogoServicios.length === 0 && (
-                  <tr>
-                    <td colSpan={2} className="text-muted">
-                      No hay servicios dados de alta en la BD de códigos.
-                    </td>
-                  </tr>
-                )}
+                {!cargandoServicios && catalogoServicios.map((srv) => {
+                  const codigo = srv.codigo;
+                  const activo = form.serviciosSeleccionados.includes(codigo);
+                  const descripcion = srv.descripcion || srv.label;
 
-                {!cargandoServicios &&
-                  catalogoServicios.length > 0 &&
-                  catalogoServicios.map((srv) => {
-                    const codigo = srv.codigo; // "S2"
-                    const activo = form.serviciosSeleccionados.includes(codigo);
-                    const descripcion = srv.descripcion || srv.label;
-
-                    return (
-                      <tr key={srv._id || codigo}>
-                        <td>
-                          {/* Puedes cambiar el formato si quieres solo descripción */}
-                          {codigo} - {descripcion}
-                        </td>
-                        <td className="text-center">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={activo}
-                            onChange={() => toggleServicio(codigo)}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  return (
+                    <tr key={srv._id || codigo}>
+                      <td>{codigo} - {descripcion}</td>
+                      <td className="text-center">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={activo}
+                          onChange={() => toggleServicio(codigo)}
+                          disabled={yaCerrada} // 🔒 Bloqueo de checkbox
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Información de llantas */}
           <div className="mb-3">
-            <label className="form-label fw-semibold">
-              Información de Llantas
-            </label>
+            <label className="form-label fw-semibold">Información de Llantas</label>
             <textarea
               className="form-control"
               rows={3}
               name="infoLlantas"
               value={form.infoLlantas}
               onChange={handleChangeText}
+              disabled={yaCerrada} // 🔒 Bloqueo de textarea
             />
           </div>
 
-          {/* Revisión fallas reportadas */}
           <div className="mb-3">
-            <label className="form-label fw-semibold">
-              REVISIÓN FALLAS REPORTADAS POR EL CLIENTE
-            </label>
+            <label className="form-label fw-semibold">REVISIÓN FALLAS REPORTADAS POR EL CLIENTE</label>
             <textarea
               className="form-control"
               rows={3}
               name="revisionFallas"
               value={form.revisionFallas}
               onChange={handleChangeText}
+              disabled={yaCerrada} 
             />
           </div>
 
           <div className="text-center">
-            <button
-              type="submit"
-              className="btn btn-primary px-5"
-              disabled={saving}
-            >
-              {saving ? "Guardando..." : "Guardar"}
-            </button>
+            {!yaCerrada ? (
+              <button
+                type="submit"
+                className="btn btn-primary px-5"
+                disabled={saving}
+              >
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+            ) : (
+              <div className="alert alert-warning d-inline-block">
+                  Esta orden ya ha sido cerrada y no permite modificaciones.
+              </div>
+            )}
           </div>
         </div>
       </div>

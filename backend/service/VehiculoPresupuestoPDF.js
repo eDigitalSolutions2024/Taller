@@ -9,31 +9,29 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     });
     const page = await browser.newPage();
 
-    // 1. Formatear Fechas y Datos Generales
     const fechaActual = dayjs().format('DD/MM/YYYY');
     const horaActual = dayjs().format('hh:mm a');
 
-    // 2. Consolidar Conceptos (Refacciones + Mano de Obra) para la tabla principal
-    // Mapeamos ambos arreglos a un formato uniforme para la tabla del PDF
+    // Consolidación de conceptos
     const itemsRefacciones = (orden.presupuesto || []).map(r => ({
       cant: r.cant,
       desc: `${r.concepto} ${r.refaccion ? '- ' + r.refaccion : ''}`,
+      tipo: r.tipo || 'N/A',
       precio: Number(r.precioVenta || 0),
       total: Number(r.cant || 0) * Number(r.precioVenta || 0)
     }));
 
     const itemsManoObra = (orden.manoObra || []).map(m => ({
-      cant: 1, // Por defecto 1 servicio
-      desc: m.concepto,
+      cant: 1,
+      desc: `MANO DE OBRA: ${m.concepto}`,
+      tipo: 'SERVICIO',
       precio: Number(m.precioVenta || 0),
       total: Number(m.precioVenta || 0)
     }));
 
     const todosLosServicios = [...itemsRefacciones, ...itemsManoObra];
-
-    // 3. Cálculos de Totales
     const subtotal = todosLosServicios.reduce((acc, item) => acc + item.total, 0);
-    const iva = subtotal * 0.08; // Ajustar al 0.16 o 0.08 según tu zona (Juárez suele ser 8%)
+    const iva = subtotal * 0.08; 
     const totalFinal = subtotal + iva;
 
     const htmlContent = `
@@ -41,90 +39,91 @@ exports.generarPresupuestoPDF = async (res, orden) => {
       <head>
         <style>
           @page { size: Letter; margin: 10mm; }
-          body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10px; color: #333; margin: 0; padding: 0; }
+          body { font-family: 'Helvetica', Arial, sans-serif; font-size: 10px; color: #333; margin: 0; padding: 0; }
           
-          /* Encabezado Estilo L18 */
-          .header-container { display: flex; justify-content: space-between; margin-bottom: 10px; }
-          .brand-box { width: 30%; }
-          .brand-name { color: #0047ba; font-size: 22px; font-weight: bold; margin: 0; }
-          .brand-sub { font-size: 9px; font-style: italic; }
+          /* ENCABEZADO ACTUALIZADO (IMAGE_70420C) */
+          .header-container { 
+            display: grid; 
+            grid-template-columns: 1fr 2fr 1fr; 
+            align-items: center; 
+            margin-bottom: 20px;
+          }
           
-          .info-box { width: 40%; text-align: center; font-size: 9px; }
-          .os-box { width: 25%; text-align: right; }
-          .os-label { color: #0047ba; font-size: 16px; font-weight: bold; }
-          .os-folio { color: red; font-size: 18px; font-weight: bold; }
+          .qr-placeholder { 
+            width: 80px; height: 80px; 
+            border: 1px solid #ccc; border-radius: 4px; 
+            display: flex; align-items: center; justify-content: center; 
+            color: #999; font-size: 12px;
+          }
 
-          /* Tablas de Datos del Cliente */
-          .data-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; }
-          .data-table td { border: 1px solid #000; padding: 4px; vertical-align: top; }
-          .label { background-color: #f2f2f2; font-weight: bold; width: 15%; }
-          .value { width: 35%; }
+          .brand-info { text-align: center; }
+          .brand-name { color: #0047ba; font-size: 24px; font-weight: bold; margin: 0; }
+          .slogan { font-size: 10px; color: #444; margin: 2px 0; }
+          .address { font-size: 8.5px; color: #666; line-height: 1.2; }
 
-          /* Tabla de Presupuesto Principal */
-          .main-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          .main-table th { background-color: #444; color: white; padding: 6px; border: 1px solid #000; }
-          .main-table td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+          .meta-info { text-align: right; font-size: 9px; }
+          .asesor-text { font-weight: bold; text-transform: uppercase; }
+
+          /* DATOS DEL VEHÍCULO (ESTILO BADGE) */
+          .v-data-bar { 
+            display: flex; justify-content: center; gap: 15px; 
+            background: #f1f5f9; padding: 6px; border-radius: 4px; 
+            margin-bottom: 15px; border: 1px solid #e2e8f0;
+          }
+          .v-item { font-size: 9px; }
+          .v-item strong { color: #0047ba; }
+
+          /* TABLA L18 */
+          .main-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+          .main-table th { background-color: #0047ba; color: white; padding: 8px; border: 1px solid #0047ba; text-transform: uppercase; }
+          .main-table td { border: 1px solid #ddd; padding: 7px; text-align: center; }
           .text-left { text-align: left !important; }
           .text-right { text-align: right !important; }
 
-          /* Bloque de Totales y Observaciones */
-          .footer-flex { display: flex; justify-content: space-between; margin-top: 15px; }
-          .obs-area { width: 65%; border: 1px solid #000; padding: 8px; min-height: 60px; }
-          .totals-area { width: 30%; }
-          .total-row { display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #eee; }
-          .grand-total { font-size: 14px; font-weight: bold; background: #eee; padding: 5px; }
-
-          /* Legales L18 */
-          .legal-text { font-size: 8px; margin-top: 15px; line-height: 1.2; }
-          .brands-footer { margin-top: 20px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; opacity: 0.7; }
+          .footer-layout { display: flex; justify-content: space-between; margin-top: 15px; }
+          .obs-box { width: 65%; border: 1px solid #000; padding: 10px; font-size: 9px; min-height: 50px; }
+          .totals-box { width: 30%; font-size: 11px; }
+          .total-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #eee; }
+          .grand-total { font-weight: bold; font-size: 14px; color: #0047ba; border-top: 2px solid #0047ba; margin-top: 5px; padding-top: 5px; }
         </style>
       </head>
       <body>
         <div class="header-container">
-          <div class="brand-box">
-            <p class="brand-name">Servillantero</p>
-            <p class="brand-sub">Profesionales al servicio de su automóvil</p>
+          <div class="qr-placeholder">QR</div>
+          
+          <div class="brand-info">
+            <h1 class="brand-name">Autoservicio D y G</h1>
+            <p class="slogan">Profesionales al servicio de su automóvil</p>
+            <p class="address">
+              32370, Av Valentín Fuentes Varela 1779, La Fuente,<br>
+              32370 Juárez, Chih. Tel: (656) ***-****
+            </p>
           </div>
-          <div class="info-box">
-            Paseo Triunfo de la República No. 322-B, Col. San Lorenzo<br>
-            Cd. Juárez, Chihuahua. CP 32320<br>
-            Tels: (656) 623 56 51 al 54
-          </div>
-          <div class="os-box">
-            <div class="os-label">PRESUPUESTO</div>
-            <div class="os-folio">L-${orden._id.toString().slice(-4).toUpperCase()}</div>
+
+          <div class="meta-info">
+            <div class="asesor-text">ASESOR: ${orden.asesor || 'admin'}</div>
+            <div style="margin-top: 10px; color: red; font-weight: bold; font-size: 14px;">
+              FOLIO: L-${orden._id.toString().slice(-4).toUpperCase()}
+            </div>
+            <div>${fechaActual}</div>
           </div>
         </div>
 
-        <table class="data-table">
-          <tr>
-            <td class="label">CLIENTE:</td>
-            <td class="value">${orden.clienteNombre || 'PRUEBA'}</td>
-            <td class="label">RECEPCIÓN:</td>
-            <td class="value">${fechaActual} A LAS ${horaActual}</td>
-          </tr>
-          <tr>
-            <td class="label">DIRIGIDO A:</td>
-            <td class="value">${orden.dirigidoA || 'N/A'}</td>
-            <td class="label">DEPARTAMENTO:</td>
-            <td class="value">${orden.departamento || 'N/A'}</td>
-          </tr>
-          <tr>
-            <td class="label">VEHÍCULO:</td>
-            <td class="value">${orden.marca} ${orden.modelo} ${orden.anio}</td>
-            <td class="label">PLACAS / SERIE:</td>
-            <td class="value">${orden.placas || 'N/A'} / ${orden.serie || 'N/A'}</td>
-          </tr>
-        </table>
+        <div class="v-data-bar">
+          <div class="v-item"><strong>PLACAS:</strong> ${orden.placas || 'N/A'}</div>
+          <div class="v-item"><strong>UNIDAD:</strong> ${orden.marca} ${orden.modelo}</div>
+          <div class="v-item"><strong>KM:</strong> ${orden.kilometraje || '0'}</div>
+          <div class="v-item"><strong>COLOR:</strong> ${orden.color || 'N/A'}</div>
+        </div>
 
         <table class="main-table">
           <thead>
             <tr>
               <th style="width: 8%;">Cant.</th>
-              <th class="text-left">Descripción del Servicio y/o Reparación</th>
-              <th style="width: 12%;">Precio</th>
-              <th style="width: 10%;">IVA</th>
-              <th style="width: 12%;">Total</th>
+              <th class="text-left">Descripción del Servicio / Refacción</th>
+              <th style="width: 12%;">Tipo</th>
+              <th style="width: 15%;">Precio</th>
+              <th style="width: 15%;">Importe</th>
             </tr>
           </thead>
           <tbody>
@@ -132,37 +131,27 @@ exports.generarPresupuestoPDF = async (res, orden) => {
               <tr>
                 <td>${item.cant}</td>
                 <td class="text-left">${item.desc}</td>
-                <td class="text-right">$${item.precio.toFixed(2)}</td>
-                <td class="text-right">$${(item.total * 0.08).toFixed(2)}</td>
-                <td class="text-right">$${(item.total * 1.08).toFixed(2)}</td>
+                <td style="font-size: 8px;">${item.tipo}</td>
+                <td class="text-right">$${item.precio.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+                <td class="text-right">$${item.total.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
               </tr>
             `).join('')}
-            ${todosLosServicios.length < 8 ? Array(8 - todosLosServicios.length).fill(0).map(() => `
-              <tr><td style="color:white">.</td><td></td><td></td><td></td><td></td></tr>
-            `).join('') : ''}
+            ${Array(Math.max(0, 8 - todosLosServicios.length)).fill(0).map(() => `
+              <tr><td style="color:transparent">.</td><td></td><td></td><td></td><td></td></tr>
+            `).join('')}
           </tbody>
         </table>
 
-        <div class="footer-flex">
-          <div class="obs-area">
-            <strong>Observaciones:</strong><br>
-            ${orden.servicioReparacion?.revisionFallas || 'Sin observaciones adicionales.'}
+        <div class="footer-layout">
+          <div class="obs-box">
+            <strong>OBSERVACIONES:</strong><br>
+            ${orden.servicioReparacion?.revisionFallas || 'Sin observaciones.'}
           </div>
-          <div class="totals-area">
-            <div class="total-row"><span>Subtotal:</span> <span>$${subtotal.toFixed(2)}</span></div>
-            <div class="total-row"><span>I.V.A.:</span> <span>$${iva.toFixed(2)}</span></div>
-            <div class="total-row grand-total"><span>Total:</span> <span>$${totalFinal.toFixed(2)}</span></div>
+          <div class="totals-box">
+            <div class="total-row"><span>Subtotal:</span> <span>$${subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="total-row"><span>I.V.A. (8%):</span> <span>$${iva.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="total-row grand-total"><span>TOTAL:</span> <span>$${totalFinal.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
           </div>
-        </div>
-
-        <div class="legal-text">
-          <p><strong>TODOS NUESTROS SERVICIOS INCLUYEN MANO DE OBRA Y REFACCIONES</strong></p>
-          <p>Importante: La presente cotización tiene una vigencia de 15 días a partir de esta fecha y está sujeta a cambios sin previo aviso, así mismo a la variación del dólar.</p>
-          <p>Garantía: Nuestras reparaciones están garantizadas por noventa (90) días en condiciones de uso normal y que no hayan sido intervenidas por terceros. No hay garantía en partes eléctricas y/o usadas, ni en bombas de gasolina.</p>
-        </div>
-
-        <div class="brands-footer">
-          MICHELIN • BFGOODRICH • PIRELLI • GOODYEAR • CONTINENTAL • DUNLOP • EUZKADI
         </div>
       </body>
     </html>`;
@@ -179,7 +168,7 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     res.send(pdfBuffer);
 
   } catch (error) {
-    console.error('Error Generar PDF:', error);
-    res.status(500).send('Error al generar el documento PDF');
+    console.error('Error:', error);
+    res.status(500).send('Error al generar PDF');
   }
 };

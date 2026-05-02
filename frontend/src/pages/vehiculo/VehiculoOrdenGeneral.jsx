@@ -1,5 +1,6 @@
 // src/pages/vehiculo/VehiculoOrdenGeneral.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { closeOrden } from "../../api/vehiculos";
 
 function formatFecha(fechaIso) {
@@ -21,6 +22,7 @@ function formatMoney(n) {
 export default function VehiculoOrdenGeneral({ orden, onClosed }) {
   // 👇 hooks SIEMPRE al inicio, sin if antes
   const [cerrando, setCerrando] = useState(false);
+  const navigate = useNavigate();
 
   // si no hay orden, ya después puedes salir
   if (!orden) return null;
@@ -42,6 +44,7 @@ export default function VehiculoOrdenGeneral({ orden, onClosed }) {
 
       if (onClosed) onClosed(vAct);
       else alert("Orden cerrada correctamente.");
+      navigate("/vehiculo/consulta-ordenes-cerradas");
     } catch (err) {
       console.error(err);
       alert("Error al cerrar la orden.");

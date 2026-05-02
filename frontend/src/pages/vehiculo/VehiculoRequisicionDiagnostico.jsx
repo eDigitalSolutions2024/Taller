@@ -4,370 +4,186 @@ import {
   saveRequisicionDiagnostico,
   generarOrdenCompra,
 } from "../../api/vehiculos";
-import http from "../../api/http"; // 👈 para descargar el PDF de la OC
+import http from "../../api/http";
 
-export default function VehiculoRequisicionDiagnostico({ orden, onSaved }) {
+export default function VehiculoRequisicionDiagnostico({ orden, onSaved, readOnly }) {
   const [diagnostico, setDiagnostico] = useState("");
-  const [rows, setRows] = useState([]); // refaccionesSolicitadas
-  const [cargos, setCargos] = useState([]); // cargosEnOrden
+  const [rows, setRows] = useState([]);
+  const [cargos, setCargos] = useState([]);
   const [line, setLine] = useState({
-    cant: "",
-    unidad: "",
-    refaccion: "",
-    tipo: "",
-    marca: "",
-    proveedor: "",
-    codigo: "",
-    precioUnitario: "",
-    moneda: "MN",
-    tiempoEntrega: "",
-    core: "",
-    observaciones: "",
+    cant: "", unidad: "", refaccion: "", tipo: "", marca: "", proveedor: "",
+    codigo: "", precioUnitario: "", moneda: "MN", tiempoEntrega: "", core: "", observaciones: "",
   });
   const [saving, setSaving] = useState(false);
-  const [savingLine, setSavingLine] = useState(false); // para el botón +
+  const [savingLine, setSavingLine] = useState(false);
+  const [historialDiagnosticos, setHistorialDiagnosticos] = useState([]);
 
- const [historialDiagnosticos, setHistorialDiagnosticos] = useState([]);
-
-
-  // Carga inicial desde la orden
   useEffect(() => {
     if (!orden) return;
-
     setDiagnostico(orden.diagnosticoTecnico || "");
-
     setHistorialDiagnosticos(orden.historialDiagnosticos || []);
 
-    // Refacciones solicitadas (arriba)
     const refConEstatus = (orden.refaccionesSolicitadas || []).map((r) => ({
       ...r,
       estatus: r.estatus || "PENDIENTE",
       requiereOC: !!r.requiereOC,
       ocGenerada: !!r.ocGenerada,
       numeroOC: r.numeroOC || null,
-      ordenCompra: r.ordenCompra || null, // 👈 ID de la OC
+      ordenCompra: r.ordenCompra || null,
     }));
     setRows(refConEstatus);
-
-    // Cargos en orden (lo que ya viene del backend)
     setCargos(orden.cargosEnOrden || []);
   }, [orden]);
 
-
- 
-
   const handleLineChange = (e) => {
     const { name, value } = e.target;
-    setLine((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setLine((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Botón +: agrega refacción y guarda en backend
   const handleAddLine = async () => {
-  const cantNum = Number(line.cant) || 0;
-  const puNum = Number(line.precioUnitario) || 0;
-  const importe = cantNum * puNum;
+    if (readOnly) return;
+    const cantNum = Number(line.cant) || 0;
+    const puNum = Number(line.precioUnitario) || 0;
+    if (!cantNum || !line.refaccion.trim()) return alert("Captura al menos Cantidad y Refacción.");
 
-  if (!cantNum || !line.refaccion.trim()) {
-    alert("Captura al menos Cantidad y Refacción.");
-    return;
-  }
+    const nueva = {
+      ...line,
+      cant: cantNum,
+      precioUnitario: puNum,
+      importeTotal: cantNum * puNum,
+      estatus: "PENDIENTE",
+    };
 
-  const nueva = {
-    ...line,
-    cant: cantNum,
-    precioUnitario: puNum,
-    importeTotal: importe,
-    estatus: "PENDIENTE",
-    requiereOC: false,
-    ocGenerada: false,
-    numeroOC: null,
-    ordenCompra: null,
-  };
-
-  const nuevasFilas = [...rows, nueva];
-
-  try {
-    setSavingLine(true);
-
-    const res = await saveRequisicionDiagnostico(orden._id, {
-      diagnosticoTecnico: diagnostico,
-      refacciones: nuevasFilas,
-    });
-
-    const vAct = res.data.vehiculo;
-
-    setRows((vAct.refaccionesSolicitadas || []).map((r) => ({
-      ...r,
-      estatus: r.estatus || "PENDIENTE",
-      requiereOC: !!r.requiereOC,
-      ocGenerada: !!r.ocGenerada,
-      numeroOC: r.numeroOC || null,
-      ordenCompra: r.ordenCompra || null,
-    })));
-
-    if (onSaved) onSaved(vAct);
-
-    setLine({
-      cant: "",
-      unidad: "",
-      refaccion: "",
-      tipo: "",
-      marca: "",
-      proveedor: "",
-      codigo: "",
-      precioUnitario: "",
-      moneda: "MN",
-      tiempoEntrega: "",
-      core: "",
-      observaciones: "",
-    });
-  } catch (err) {
-    console.error(err);
-    alert("Error al guardar la refacción. Revisa conexión / backend.");
-  } finally {
-    setSavingLine(false);
-  }
-};
-
-  const handleRemoveRow = async (idx) => {
-    // 1. Confirmación opcional para evitar borrados accidentales
-    if (!window.confirm("¿Estás seguro de eliminar esta refacción?")) return;
-
-    // 2. Crear el nuevo arreglo sin la fila seleccionada
-    const nuevasFilas = rows.filter((_, i) => i !== idx);
-
-    // 3. Actualizar localmente para rapidez visual
-    setRows(nuevasFilas);
+    const nuevasFilas = [...rows, nueva];
 
     try {
-      // 4. Persistir en el servidor
+      setSavingLine(true);
       const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
       });
-
-      // 5. Actualizar el estado global de la orden
-      const vAct = res.data.vehiculo;
-      if (onSaved) onSaved(vAct);
-      
+      if (onSaved) onSaved(res.data.vehiculo);
+      setLine({
+        cant: "", unidad: "", refaccion: "", tipo: "", marca: "",
+        proveedor: "", codigo: "", precioUnitario: "", moneda: "MN",
+        tiempoEntrega: "", core: "", observaciones: "",
+      });
     } catch (err) {
-      console.error("Error al eliminar refacción:", err);
-      alert("No se pudo eliminar la refacción del servidor.");
-      // Revertir cambio local si falla el servidor para mantener sincronía
-      setRows(rows);
+      alert("Error al guardar la refacción.");
+    } finally {
+      setSavingLine(false);
     }
   };
 
   const handleEditRow = (idx) => {
+    if (readOnly) return;
     const r = rows[idx];
     setLine({
-      cant: String(r.cant ?? ""),
-      unidad: r.unidad || "",
-      refaccion: r.refaccion || "",
-      tipo: r.tipo || "",
-      marca: r.marca || "",
-      proveedor: r.proveedor || "",
-      codigo: r.codigo || "",
-      precioUnitario: r.precioUnitario != null ? String(r.precioUnitario) : "",
-      moneda: r.moneda || "MN",
-      tiempoEntrega: r.tiempoEntrega || "",
-      core: r.core || "",
-      observaciones: r.observaciones || "",
+      cant: r.cant || "", unidad: r.unidad || "", refaccion: r.refaccion || "",
+      tipo: r.tipo || "", marca: r.marca || "", proveedor: r.proveedor || "",
+      codigo: r.codigo || "", precioUnitario: r.precioUnitario || "",
+      moneda: r.moneda || "MN", tiempoEntrega: r.tiempoEntrega || "",
+      core: r.core || "", observaciones: r.observaciones || "",
     });
-    
-    // Solo filtramos localmente para que el usuario "re-agregue" la fila editada
     setRows(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSetStatus = async (idx, estatus) => {
-    const prevRows = rows;
-    const nuevasFilas = rows.map((r, i) =>
-      i === idx ? { ...r, estatus } : r
-    );
-
-    // Actualización local inmediata para feedback visual
-    setRows(nuevasFilas);
-
+  const handleRemoveRow = async (idx) => {
+    if (readOnly || !window.confirm("¿Estás seguro de eliminar esta refacción?")) return;
+    const nuevasFilas = rows.filter((_, i) => i !== idx);
     try {
       const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
       });
-
-      // ✅ CLAVE: Obtener el vehículo actualizado del backend
-      const vAct = res.data.vehiculo;
-
-      // ✅ CLAVE: Notificar al padre para que la prop 'orden' se actualice globalmente
-      if (onSaved) onSaved(vAct);
-
+      if (onSaved) onSaved(res.data.vehiculo);
     } catch (err) {
-      console.error(err);
-      alert("Error al actualizar el estatus de la refacción.");
-      setRows(prevRows); // Revertir si falla
+      alert("No se pudo eliminar.");
     }
   };
 
-  // 👉 Descargar / abrir PDF de una OC existente
-  const handleVerOrdenCompra = async (ordenCompraId) => {
-    if (!ordenCompraId) return;
-
+  const handleSetStatus = async (idx, estatus) => {
+    if (readOnly) return;
+    const nuevasFilas = rows.map((r, i) => (i === idx ? { ...r, estatus } : r));
     try {
-      const resp = await http.get(`/ordenes-compra/${ordenCompraId}/pdf`, {
-        responseType: "blob",
+      const res = await saveRequisicionDiagnostico(orden._id, {
+        diagnosticoTecnico: diagnostico,
+        refacciones: nuevasFilas,
       });
+      if (onSaved) onSaved(res.data.vehiculo);
+    } catch (err) {
+      alert("Error al actualizar estatus.");
+    }
+  };
 
-      const blob = new Blob([resp.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
+  const handleVerOrdenCompra = async (ordenCompraId) => {
+    try {
+      const resp = await http.get(`/ordenes-compra/${ordenCompraId}/pdf`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
       window.open(url, "_blank");
     } catch (err) {
-      console.error(err);
-      alert("No se pudo abrir el PDF de la orden de compra.");
+      alert("No se pudo abrir el PDF.");
     }
   };
 
-  // 👉 Generar orden de compra DESDE el checkbox
   const handleGenerarOC = async (idx) => {
+    if (readOnly) return;
     const ref = rows[idx];
-
-    if (ref.ocGenerada) {
-      // si ya existe, mejor abrimos el PDF directo
-      if (ref.ordenCompra) {
-        await handleVerOrdenCompra(ref.ordenCompra);
-      } else {
-        alert("Esta refacción ya tiene una OC generada.");
-      }
-      return;
-    }
-
-    if (ref.estatus !== "APROBADA") {
-      alert("Solo se puede generar orden de compra para refacciones APROBADAS.");
-      return;
-    }
-
-    const ok = window.confirm(
-      "¿Generar orden de compra para esta refacción?"
-    );
-    if (!ok) return;
-
-    const prevRows = rows;
-    let nuevasFilas = rows.map((r, i) =>
-      i === idx ? { ...r, _ocLoading: true } : r
-    );
-    setRows(nuevasFilas);
+    if (ref.ocGenerada) return ref.ordenCompra && handleVerOrdenCompra(ref.ordenCompra);
+    if (ref.estatus !== "APROBADA") return alert("Solo refacciones APROBADAS.");
+    if (!window.confirm("¿Generar orden de compra?")) return;
 
     try {
       const data = await generarOrdenCompra(orden._id, ref);
-      // espero algo como: { numeroOC, ordenCompraId }
-      nuevasFilas = nuevasFilas.map((r, i) =>
-        i === idx
-          ? {
-              ...r,
-              _ocLoading: false,
-              ocGenerada: true,
-              requiereOC: true,
-              numeroOC: data.numeroOC || r.numeroOC || null,
-              ordenCompra: data.ordenCompraId || r.ordenCompra || null,
-            }
-          : r
-      );
-      setRows(nuevasFilas);
-
-      alert(
-        data.numeroOC
-          ? `Orden de compra generada: ${data.numeroOC}`
-          : "Orden de compra generada correctamente."
-      );
-
-      // 👉 Abrir inmediatamente el PDF si tenemos el ID
-      if (data.ordenCompraId) {
-        await handleVerOrdenCompra(data.ordenCompraId);
-      }
+      const res = await http.get(`/vehiculos/${orden._id}`);
+      if (onSaved) onSaved(res.data.vehiculo);
+      if (data.ordenCompraId) await handleVerOrdenCompra(data.ordenCompraId);
     } catch (err) {
-      console.error(err);
-      alert("Error al generar la orden de compra.");
-      setRows(prevRows);
+      alert("Error al generar OC.");
     }
   };
 
-  const totalGeneral = useMemo(
-    () => rows.reduce((acc, r) => acc + (Number(r.importeTotal) || 0), 0),
-    [rows]
-  );
-
-  const totalCargos = useMemo(
-    () => cargos.reduce((acc, c) => acc + (Number(c.importeTotal) || 0), 0),
-    [cargos]
-  );
-
-  const formatMoney = (n) =>
-    new Intl.NumberFormat("es-MX", {
-      style: "currency",
-      currency: "MXN",
-      minimumFractionDigits: 2,
-    }).format(Number(n) || 0);
-
   const handleSave = async () => {
+    if (readOnly) return;
     try {
       setSaving(true);
-      const payload = {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: rows,
         estadoOrden: "PENDIENTE_AUTORIZACION",
-      };
-      const res = await saveRequisicionDiagnostico(orden._id, payload);
-      const vAct = res.data.vehiculo;
-      if (onSaved) onSaved(vAct);
-      alert("Orden enviada al asesor correctamente.");
+      });
+      if (onSaved) onSaved(res.data.vehiculo);
+      alert("Enviado al asesor.");
     } catch (err) {
-      console.error(err);
-      alert("Error al guardar la requisición/diagnóstico.");
+      alert("Error al guardar.");
     } finally {
       setSaving(false);
     }
   };
 
-  const badgeClass = (estatus) => {
-    switch (estatus) {
-      case "APROBADA":
-        return "badge bg-success";
-      case "RECHAZADA":
-        return "badge bg-danger";
-      default:
-        return "badge bg-secondary";
+  const guardarDiagnosticoEnHistorial = async () => {
+    if (readOnly || !diagnostico.trim()) return;
+    try {
+      const res = await saveRequisicionDiagnostico(orden._id, {
+        diagnosticoTecnico: diagnostico,
+        refacciones: rows,
+        guardarEnHistorial: true,
+      });
+      if (onSaved) onSaved(res.data.vehiculo);
+      alert("Guardado en historial.");
+    } catch (err) {
+      alert("Error al guardar en historial.");
     }
   };
 
-const guardarDiagnosticoEnHistorial = async () => {
-  if (!diagnostico.trim()) {
-    alert("No hay diagnóstico para guardar en historial.");
-    return;
-  }
-
-  try {
-    const res = await saveRequisicionDiagnostico(orden._id, {
-      diagnosticoTecnico: diagnostico,
-      refacciones: rows,
-      guardarEnHistorial: true,
-    });
-
-    const vAct = res.data.vehiculo;
-    if (onSaved) onSaved(vAct);
-
-    alert("Diagnóstico guardado en el historial del vehículo.");
-  } catch (err) {
-    console.error(err);
-    alert("Error al guardar el diagnóstico en historial.");
-  }
-};
-
+  const totalGeneral = useMemo(() => rows.reduce((acc, r) => acc + (Number(r.importeTotal) || 0), 0), [rows]);
+  const totalCargos = useMemo(() => cargos.reduce((acc, c) => acc + (Number(c.importeTotal) || 0), 0), [cargos]);
+  const formatMoney = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
+  const badgeClass = (s) => `badge ${s === "APROBADA" ? "bg-success" : s === "RECHAZADA" ? "bg-danger" : "bg-secondary"}`;
 
   return (
     <div className="card">
       <div className="card-body">
-        {/* Diagnóstico del técnico + botón */}
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div className="flex-grow-1 me-3">
             <label className="form-label">Diagnóstico del Técnico:</label>
@@ -376,400 +192,163 @@ const guardarDiagnosticoEnHistorial = async () => {
               rows={3}
               value={diagnostico}
               onChange={(e) => setDiagnostico(e.target.value)}
+              disabled={readOnly}
             />
-
             <div className="mt-2">
-  <button
-    type="button"
-    className="btn btn-outline-success btn-sm"
-    onClick={guardarDiagnosticoEnHistorial}
-  >
-    Guardar en historial del vehículo
-  </button>
-</div>
-
-<div
-  className="border mt-2 p-2"
-  style={{ maxHeight: "180px", overflowY: "auto" }}
->
-  {historialDiagnosticos.length === 0 && (
-    <small className="text-muted">
-      Este vehículo aún no tiene diagnósticos guardados en historial.
-    </small>
-  )}
-
-  {historialDiagnosticos
-    .slice()
-    .reverse()
-    .map((d, idx) => (
-      <div
-        key={idx}
-        className="d-flex justify-content-between align-items-start mb-2"
-      >
-        <div style={{ maxWidth: "78%" }}>
-          <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
-          <small className="text-muted">
-            {d.fecha ? new Date(d.fecha).toLocaleString("es-MX") : ""}
-          </small>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-primary"
-          onClick={() => setDiagnostico(d.texto || "")}
-        >
-          Usar
-        </button>
-      </div>
-    ))}
-</div>
-
+              <button type="button" className="btn btn-outline-success btn-sm" onClick={guardarDiagnosticoEnHistorial} disabled={readOnly}>
+                Guardar en historial del vehículo
+              </button>
+            </div>
+            <div className="border mt-2 p-2" style={{ maxHeight: "180px", overflowY: "auto" }}>
+              {historialDiagnosticos.length === 0 && <small className="text-muted">Sin diagnósticos previos.</small>}
+              {historialDiagnosticos.slice().reverse().map((d, idx) => (
+                <div key={idx} className="d-flex justify-content-between align-items-start mb-2">
+                  <div style={{ maxWidth: "78%" }}>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
+                    <small className="text-muted">{d.fecha ? new Date(d.fecha).toLocaleString("es-MX") : ""}</small>
+                  </div>
+                  <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setDiagnostico(d.texto || "")} disabled={readOnly}>Usar</button>
+                </div>
+              ))}
+            </div>
           </div>
-
           <div className="mt-4">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleSave}
-              disabled={saving}
-            >
+            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving || readOnly}>
               {saving ? "Enviando..." : "Enviar Orden a Asesor"}
             </button>
           </div>
         </div>
 
-        {/* ===== Tabla refacciones solicitadas (arriba) ===== */}
         <h5 className="text-center mb-2 fw-bold">REFACCIONES SOLICITADAS</h5>
-
         <div className="table-responsive mb-2">
           <table className="table table-bordered table-sm align-middle">
             <thead className="table-light text-center">
               <tr>
-                <th>Cant</th>
-                <th>Unidad</th>
-                <th>Refacción</th>
-                <th>Tipo</th>
-                <th>Marca</th>
-                <th>Proveedor</th>
-                <th>Código</th>
-                <th>Precio Unitario</th>
-                <th>Importe Total</th>
-                <th>Moneda</th>
-                <th>Tiempo Entrega</th>
-                <th>Observaciones</th>
-                <th>Estatus</th>
-                <th>Orden compra</th>
-                <th>Acción</th>
+                <th>Cant</th><th>Unidad</th><th>Refacción</th><th>Tipo</th><th>Marca</th><th>Proveedor</th><th>Código</th>
+                <th>Precio Unitario</th><th>Importe Total</th><th>Moneda</th><th>Tiempo Entrega</th><th>Observaciones</th>
+                <th>Estatus</th><th>Orden compra</th><th>Acción</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={15} className="text-center text-muted">
-                    No hay refacciones capturadas.
-                  </td>
-                </tr>
+              {rows.length === 0 ? (
+                <tr><td colSpan={15} className="text-center text-muted">No hay refacciones capturadas.</td></tr>
+              ) : (
+                rows.map((r, idx) => (
+                  <tr key={idx}>
+                    <td className="text-center">{r.cant}</td>
+                    <td className="text-center">{r.unidad}</td>
+                    <td>{r.refaccion}</td>
+                    <td className="text-center">{r.tipo}</td>
+                    <td className="text-center">{r.marca}</td>
+                    <td className="text-center">{r.proveedor}</td>
+                    <td className="text-center">{r.codigo}</td>
+                    <td className="text-end">{formatMoney(r.precioUnitario)}</td>
+                    <td className="text-end">{formatMoney(r.importeTotal)}</td>
+                    <td className="text-center">{r.moneda}</td>
+                    <td className="text-center">{r.tiempoEntrega}</td>
+                    <td>{r.observaciones}</td>
+                    <td className="text-center"><span className={badgeClass(r.estatus)}>{r.estatus}</span></td>
+                    <td className="text-center">
+                      {r.ocGenerada ? (
+                        <button type="button" className="btn btn-info btn-sm" onClick={() => handleVerOrdenCompra(r.ordenCompra)}>
+                          {r.numeroOC ? `OC ${r.numeroOC}` : "Ver OC"}
+                        </button>
+                      ) : (
+                        <input type="checkbox" onChange={() => handleGenerarOC(idx)} disabled={readOnly || r.estatus !== "APROBADA"} />
+                      )}
+                    </td>
+                    <td className="text-center">
+                      <div className="btn-group-vertical btn-group-sm">
+                        <button type="button" className="btn btn-warning" onClick={() => handleEditRow(idx)} disabled={readOnly}>Editar</button>
+                        <button type="button" className="btn btn-danger" onClick={() => handleRemoveRow(idx)} disabled={readOnly}>Borrar</button>
+                        <button type="button" className="btn btn-success" onClick={() => handleSetStatus(idx, "APROBADA")} disabled={readOnly}>Autorizado</button>
+                        <button type="button" className="btn btn-outline-danger" onClick={() => handleSetStatus(idx, "RECHAZADA")} disabled={readOnly}>Rechazado</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-
-              {rows.map((r, idx) => (
-                <tr key={idx}>
-                  <td className="text-center">{r.cant}</td>
-                  <td className="text-center">{r.unidad}</td>
-                  <td>{r.refaccion}</td>
-                  <td className="text-center">{r.tipo}</td>
-                  <td className="text-center">{r.marca}</td>
-                  <td className="text-center">{r.proveedor}</td>
-                  <td className="text-center">{r.codigo}</td>
-                  <td className="text-end">{formatMoney(r.precioUnitario)}</td>
-                  <td className="text-end">{formatMoney(r.importeTotal)}</td>
-                  <td className="text-center">{r.moneda}</td>
-                  <td className="text-center">{r.tiempoEntrega}</td>
-                  <td>{r.observaciones}</td>
-                  <td className="text-center">
-                    <span className={badgeClass(r.estatus || "PENDIENTE")}>
-                      {r.estatus || "PENDIENTE"}
-                    </span>
-                  </td>
-
-                  {/* ✅ COLUMNA ORDEN DE COMPRA */}
-                  <td className="text-center">
-                    {r.ocGenerada && r.ordenCompra ? (
-                      <button
-                        type="button"
-                        className="btn btn-info btn-sm"
-                        onClick={() => handleVerOrdenCompra(r.ordenCompra)}
-                      >
-                        {r.numeroOC ? `OC ${r.numeroOC}` : "Ver OC"}
-                      </button>
-                    ) : (
-                      <input
-                        type="checkbox"
-                        disabled={r._ocLoading}
-                        onChange={() => handleGenerarOC(idx)}
-                        title={
-                          r.estatus !== "APROBADA"
-                            ? "Solo refacciones APROBADAS pueden generar OC"
-                            : "Generar orden de compra"
-                        }
-                      />
-                    )}
-                  </td>
-
-                  <td className="text-center">
-                    <div className="btn-group-vertical btn-group-sm">
-                      <button
-                        type="button"
-                        className="btn btn-warning"
-                        onClick={() => handleEditRow(idx)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => handleRemoveRow(idx)}
-                      >
-                        Borrar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-success"
-                        onClick={() => handleSetStatus(idx, "APROBADA")}
-                      >
-                        Autorizado
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline-danger"
-                        onClick={() => handleSetStatus(idx, "RECHAZADA")}
-                      >
-                        Rechazado
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={8} className="text-end fw-bold">
-                  Total:
-                </td>
-                <td className="text-end fw-bold">
-                  {formatMoney(totalGeneral)}
-                </td>
-                <td colSpan={6}></td> {/* 8 + 1 + 6 = 15 columnas */}
+                <td colSpan={8} className="text-end fw-bold">Total:</td>
+                <td className="text-end fw-bold">{formatMoney(totalGeneral)}</td>
+                <td colSpan={6}></td>
               </tr>
             </tfoot>
           </table>
         </div>
 
-        {/* ===== Línea de captura (abajo) ===== */}
-        <div className="table-responsive mb-4">
-          <table className="table table-bordered table-sm align-middle mb-0">
-            <thead className="table-light text-center">
-              <tr>
-                <th>Cant</th>
-                <th>Unidad</th>
-                <th>Refacción</th>
-                <th>Tipo</th>
-                <th>Marca</th>
-                <th>Proveedor</th>
-                <th>Código</th>
-                <th>Precio Unitario</th>
-                <th>Moneda</th>
-                <th>Tiempo Entrega</th>
-                <th>Core</th>
-                <th>Observaciones</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ width: "70px" }}>
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    name="cant"
-                    value={line.cant}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "90px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="unidad"
-                    value={line.unidad}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="refaccion"
-                    value={line.refaccion}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "120px" }}>
-                  <select
-                    className="form-select form-select-sm"
-                    name="tipo"
-                    value={line.tipo}
-                    onChange={handleLineChange}
-                  >
-                    <option value="">Selec...</option>
-                    <option value="Original">Original</option>
-                    <option value="Alterna">Alterna</option>
-                  </select>
-                </td>
-                <td style={{ width: "120px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="marca"
-                    value={line.marca}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "120px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="proveedor"
-                    value={line.proveedor}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "110px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="codigo"
-                    value={line.codigo}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "120px" }}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="form-control form-control-sm"
-                    name="precioUnitario"
-                    value={line.precioUnitario}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "90px" }}>
-                  <select
-                    className="form-select form-select-sm"
-                    name="moneda"
-                    value={line.moneda}
-                    onChange={handleLineChange}
-                  >
-                    <option value="MN">MN</option>
-                    <option value="USD">USD</option>
-                  </select>
-                </td>
-                <td style={{ width: "110px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="tiempoEntrega"
-                    value={line.tiempoEntrega}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td style={{ width: "100px" }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="core"
-                    value={line.core}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    name="observaciones"
-                    value={line.observaciones}
-                    onChange={handleLineChange}
-                  />
-                </td>
-                <td className="text-center" style={{ width: "70px" }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    onClick={handleAddLine}
-                    disabled={savingLine}
-                  >
-                    {savingLine ? "..." : "+"}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {/* Línea de captura (solo visible si no es readOnly) */}
+        {!readOnly && (
+          <div className="table-responsive mb-4">
+            <table className="table table-bordered table-sm align-middle mb-0">
+              <thead className="table-light text-center">
+                <tr>
+                  <th>Cant</th><th>Unidad</th><th>Refacción</th><th>Tipo</th><th>Marca</th><th>Proveedor</th><th>Código</th>
+                  <th>Precio Unitario</th><th>Moneda</th><th>Tiempo Entrega</th><th>Core</th><th>Observaciones</th><th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ width: "70px" }}><input type="number" className="form-control form-control-sm" name="cant" value={line.cant} onChange={handleLineChange} /></td>
+                  <td style={{ width: "90px" }}><input type="text" className="form-control form-control-sm" name="unidad" value={line.unidad} onChange={handleLineChange} /></td>
+                  <td><input type="text" className="form-control form-control-sm" name="refaccion" value={line.refaccion} onChange={handleLineChange} /></td>
+                  <td style={{ width: "120px" }}>
+                    <select className="form-select form-select-sm" name="tipo" value={line.tipo} onChange={handleLineChange}>
+                      <option value="">Selec...</option><option value="Original">Original</option><option value="Alterna">Alterna</option>
+                    </select>
+                  </td>
+                  <td style={{ width: "120px" }}><input type="text" className="form-control form-control-sm" name="marca" value={line.marca} onChange={handleLineChange} /></td>
+                  <td style={{ width: "120px" }}><input type="text" className="form-control form-control-sm" name="proveedor" value={line.proveedor} onChange={handleLineChange} /></td>
+                  <td style={{ width: "110px" }}><input type="text" className="form-control form-control-sm" name="codigo" value={line.codigo} onChange={handleLineChange} /></td>
+                  <td style={{ width: "120px" }}><input type="number" step="0.01" className="form-control form-control-sm" name="precioUnitario" value={line.precioUnitario} onChange={handleLineChange} /></td>
+                  <td style={{ width: "90px" }}>
+                    <select className="form-select form-select-sm" name="moneda" value={line.moneda} onChange={handleLineChange}>
+                      <option value="MN">MN</option><option value="USD">USD</option>
+                    </select>
+                  </td>
+                  <td style={{ width: "110px" }}><input type="text" className="form-control form-control-sm" name="tiempoEntrega" value={line.tiempoEntrega} onChange={handleLineChange} /></td>
+                  <td style={{ width: "100px" }}><input type="text" className="form-control form-control-sm" name="core" value={line.core} onChange={handleLineChange} /></td>
+                  <td><input type="text" className="form-control form-control-sm" name="observaciones" value={line.observaciones} onChange={handleLineChange} /></td>
+                  <td className="text-center" style={{ width: "70px" }}>
+                    <button type="button" className="btn btn-sm btn-primary" onClick={handleAddLine} disabled={savingLine}>
+                      {savingLine ? "..." : "+"}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
 
-        {/* ===== NUEVA SECCIÓN: CARGOS EN ORDEN ===== */}
         <h5 className="text-center mb-2 fw-bold">CARGOS EN ORDEN</h5>
-
         <div className="table-responsive">
           <table className="table table-bordered table-sm align-middle">
             <thead className="table-light text-center">
               <tr>
-                <th>Cant</th>
-                <th>Unidad</th>
-                <th>Refacción y/o Servicio</th>
-                <th>Marca</th>
-                <th>Proveedor</th>
-                <th>Código</th>
-                <th>Precio Unitario</th>
-                <th>Importe Total</th>
-                <th>Moneda</th>
-                <th>Observaciones</th>
+                <th>Cant</th><th>Unidad</th><th>Refacción y/o Servicio</th><th>Marca</th><th>Proveedor</th><th>Código</th>
+                <th>Precio Unitario</th><th>Importe Total</th><th>Moneda</th><th>Observaciones</th>
               </tr>
             </thead>
             <tbody>
-              {cargos.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="text-center text-muted">
-                    No hay cargos registrados para esta orden.
-                  </td>
-                </tr>
+              {cargos.length === 0 ? (
+                <tr><td colSpan={10} className="text-center text-muted">No hay cargos registrados.</td></tr>
+              ) : (
+                cargos.map((c, idx) => (
+                  <tr key={idx}>
+                    <td className="text-center">{c.cant}</td><td className="text-center">{c.unidad}</td><td>{c.refaccion}</td>
+                    <td className="text-center">{c.marca}</td><td className="text-center">{c.proveedor}</td><td className="text-center">{c.codigo}</td>
+                    <td className="text-end">{formatMoney(c.precioUnitario)}</td><td className="text-end">{formatMoney(c.importeTotal)}</td>
+                    <td className="text-center">{c.moneda}</td><td>{c.observaciones}</td>
+                  </tr>
+                ))
               )}
-
-              {cargos.map((c, idx) => (
-                <tr key={idx}>
-                  <td className="text-center">{c.cant}</td>
-                  <td className="text-center">{c.unidad}</td>
-                  <td>{c.refaccion}</td>
-                  <td className="text-center">{c.marca}</td>
-                  <td className="text-center">{c.proveedor}</td>
-                  <td className="text-center">{c.codigo}</td>
-                  <td className="text-end">
-                    {formatMoney(c.precioUnitario)}
-                  </td>
-                  <td className="text-end">
-                    {formatMoney(c.importeTotal)}
-                  </td>
-                  <td className="text-center">{c.moneda}</td>
-                  <td>{c.observaciones}</td>
-                </tr>
-              ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={7} className="text-end fw-bold">
-                  Total:
-                </td>
-                <td className="text-end fw-bold">
-                  {formatMoney(totalCargos)}
-                </td>
+                <td colSpan={7} className="text-end fw-bold">Total:</td>
+                <td className="text-end fw-bold">{formatMoney(totalCargos)}</td>
                 <td colSpan={2}></td>
               </tr>
             </tfoot>

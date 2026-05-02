@@ -10,192 +10,154 @@ import {
 import VehiculoNuevoForm from "./VehiculoNuevoForm";
 import ServicioReparacionTab from "./ServicioReparacionTab";
 import VehiculoRequisicionDiagnostico from "./VehiculoRequisicionDiagnostico";
-import VehiculoPresupuestoVenta from "./VehiculoPresupuestoVenta"; // 👈 NUEVO
+import VehiculoPresupuestoVenta from "./VehiculoPresupuestoVenta";
 import VehiculoOrdenGeneral from "./VehiculoOrdenGeneral";
-
 
 export default function VehiculoOrdenDetalle() {
   const { id } = useParams();
   const [orden, setOrden] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("datos"); // 'datos' | 'servicio' | 'req' | 'presupuesto' | 'general'
+  const [tab, setTab] = useState("datos");
   const [ordenIniciada, setOrdenIniciada] = useState(false);
   const [empleados, setEmpleados] = useState([]);
 
+  // Lógica de bloqueo centralizada
+  const isClosed = orden?.estadoOrden === "CERRADA";
+
   useEffect(() => {
-  const load = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      // 1. Cargamos primero la orden (lo más importante)
-      const resOrden = await getVehiculoById(id);
-      const v = resOrden.data.vehiculo;
-      setOrden(v);
-      setOrdenIniciada(!!v.ordenIniciada);
-
-      // 2. Intentamos cargar empleados por separado
+    const load = async () => {
       try {
-        const resEmpleados = await getEmpleados();
-        setEmpleados(resEmpleados.data.empleados || resEmpleados.data);
-      } catch (empErr) {
-        console.warn("No se pudieron cargar los empleados (401), pero la orden sí cargó.");
-        // Opcional: setEmpleados([]) para asegurar que no sea undefined
+        setLoading(true);
+        setError("");
+
+        const resOrden = await getVehiculoById(id);
+        const v = resOrden.data.vehiculo;
+        setOrden(v);
+        setOrdenIniciada(!!v.ordenIniciada);
+
+        try {
+          const resEmpleados = await getEmpleados();
+          setEmpleados(resEmpleados.data.empleados || resEmpleados.data);
+        } catch (empErr) {
+          console.warn("No se pudieron cargar los empleados.");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("No se pudo cargar la orden principal.");
+      } finally {
+        setLoading(false);
       }
+    };
+    load();
+  }, [id]);
 
-    } catch (err) {
-      console.error(err);
-      setError("No se pudo cargar la orden principal.");
-    } finally {
-      setLoading(false);
-    }
-  };
-  load();
-}, [id]);
-
-  // cuando guardas en "Servicio o Reparación"
   const handleServicioSaved = (vehiculoActualizado) => {
     setOrden(vehiculoActualizado);
-    setOrdenIniciada(true); // ya está iniciada
-    // si quieres mandarlo directo a Requisición al guardar:
-    // setTab("req");
+    setOrdenIniciada(true);
   };
 
-  if (loading) {
-    return <p className="text-center mt-4">Cargando orden...</p>;
-  }
-
-  if (error) {
-    return <p className="text-center text-danger mt-4">{error}</p>;
-  }
-
-  if (!orden) {
-    return <p className="text-center mt-4">Orden no encontrada.</p>;
-  }
+  if (loading) return <p className="text-center mt-4">Cargando orden...</p>;
+  if (error) return <p className="text-center text-danger mt-4">{error}</p>;
+  if (!orden) return <p className="text-center mt-4">Orden no encontrada.</p>;
 
   return (
     <div className="container-fluid">
-      <h2
-        className="text-center fw-bold my-3"
-        style={{ letterSpacing: "2px" }}
-      >
-        NUEVA ORDEN DE SERVICIO
+      <h2 className="text-center fw-bold my-3" style={{ letterSpacing: "2px" }}>
+        DETALLE DE ORDEN DE SERVICIO
       </h2>
 
-      {/* Tabs estilo clásico */}
+      {/* Tabs */}
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
-          <button
-            className={"nav-link" + (tab === "datos" ? " active" : "")}
-            type="button"
-            onClick={() => setTab("datos")}
-          >
+          <button className={"nav-link" + (tab === "datos" ? " active" : "")} onClick={() => setTab("datos")}>
             Datos del Cliente
           </button>
         </li>
-
         <li className="nav-item">
-          <button
-            className={"nav-link" + (tab === "servicio" ? " active" : "")}
-            type="button"
-            onClick={() => setTab("servicio")}
-          >
+          <button className={"nav-link" + (tab === "servicio" ? " active" : "")} onClick={() => setTab("servicio")}>
             Servicio o Reparación
           </button>
         </li>
-
-        {/* Requisición y Diagnóstico: solo visible cuando ya está iniciada */}
         {ordenIniciada && (
-          <li className="nav-item">
-            <button
-              className={"nav-link" + (tab === "req" ? " active" : "")}
-              type="button"
-              onClick={() => setTab("req")}
-            >
-              Requisición y Diagnóstico
-            </button>
-          </li>
-        )}
-
-        {/* Presupuesto y Venta al Cliente: también solo si está iniciada */}
-        {ordenIniciada && (
-          <li className="nav-item">
-            <button
-              className={"nav-link" + (tab === "presupuesto" ? " active" : "")}
-              type="button"
-              onClick={() => setTab("presupuesto")}
-            >
-              Presupuesto y Venta al Cliente
-            </button>
-          </li>
-        )}
-
-        {/* General: habilitada, Calidad escondida */}
-        {ordenIniciada && (
-          <li className="nav-item">
-            <button
-              className={"nav-link" + (tab === "general" ? " active" : "")}
-              type="button"
-              onClick={() => setTab("general")}
-            >
-              General
-            </button>
-          </li>
+          <>
+            <li className="nav-item">
+              <button className={"nav-link" + (tab === "req" ? " active" : "")} onClick={() => setTab("req")}>
+                Requisición y Diagnóstico
+              </button>
+            </li>
+            <li className="nav-item">
+              <button className={"nav-link" + (tab === "presupuesto" ? " active" : "")} onClick={() => setTab("presupuesto")}>
+                Presupuesto y Venta
+              </button>
+            </li>
+            <li className="nav-item">
+              <button className={"nav-link" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>
+                General
+              </button>
+            </li>
+          </>
         )}
       </ul>
 
-      {/* Contenido de tabs */}
-      {tab === "datos" && (
-        <VehiculoNuevoForm cliente={null} initialData={orden} readOnly />
-      )}
+      {/* Contenido de Tabs pasándole isClosed a todos */}
+      <div className="tab-content">
+        {tab === "datos" && (
+          <VehiculoNuevoForm 
+            cliente={null} 
+            initialData={orden} 
+            readOnly={true} // Siempre solo lectura aquí
+          />
+        )}
 
-      {tab === "servicio" && (
-        <ServicioReparacionTab
-          ordenId={orden._id}
-          initialData={orden.servicioReparacion}
-          onSaved={handleServicioSaved}
-        />
-      )}
+        {tab === "servicio" && (
+          <ServicioReparacionTab
+            ordenId={orden._id}
+            initialData={orden.servicioReparacion}
+            onSaved={handleServicioSaved}
+            yaCerrada={isClosed} 
+          />
+        )}
 
-      {tab === "req" && ordenIniciada && (
-        <VehiculoRequisicionDiagnostico
-          orden={orden}
-          onSaved={(vActualizado) => setOrden(vActualizado)}
-        />
-      )}
+        {tab === "req" && ordenIniciada && (
+          <VehiculoRequisicionDiagnostico
+            orden={orden}
+            onSaved={(vActualizado) => setOrden(vActualizado)}
+            readOnly={isClosed} 
+          />
+        )}
 
-      {tab === "presupuesto" && ordenIniciada && (
+        {tab === "presupuesto" && ordenIniciada && (
           <VehiculoPresupuestoVenta
             orden={orden}
             empleados={empleados}
             onSaved={(vActualizado) => setOrden(vActualizado)}
+            readOnly={isClosed} 
           />
         )}
 
-      {/* Tab General (por ahora solo placeholder, luego lo llenamos) */}
-      {tab === "general" && ordenIniciada && (
-        <VehiculoOrdenGeneral orden={orden} />
-      )}
+        {tab === "general" && ordenIniciada && (
+          <VehiculoOrdenGeneral 
+            orden={orden} 
+            readOnly={isClosed} 
+          />
+        )}
+      </div>
 
-
-      {/* Botones debajo: Imprimir y Operativo */}
+      {/* Botones de Acción */}
       {(tab === "datos" || tab === "servicio") && (
-        <div className="text-center my-3">
+        <div className="text-center my-4">
           <button
-            type="button"
-            className="btn btn-secondary me-2"
+            className="btn btn-outline-secondary me-2"
             onClick={() => openImprimirPdf(orden._id)}
           >
-            Imprimir
+            Imprimir PDF
           </button>
-
           <button
-            type="button"
-            className="btn btn-primary"
+            className="btn btn-outline-primary"
             onClick={() => openOperativoPdf(orden._id)}
           >
-            Operativo
+            Formato Operativo
           </button>
         </div>
       )}

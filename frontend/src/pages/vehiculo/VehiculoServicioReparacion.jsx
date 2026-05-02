@@ -1,8 +1,12 @@
 // src/pages/vehiculo/VehiculoServicioReparacion.jsx
 import React, { useEffect, useState } from "react";
 import { fetchServiciosTaller } from "../../api/codigos";
+import { closeOrden } from "../../api/vehiculos";
 
-export default function VehiculoServicioReparacion({ orden, readOnly = false }) {
+export default function VehiculoServicioReparacion({ orden, readOnly = false, yaCerrada = false }) {
+
+  const estaBloqueado = readOnly || yaCerrada || orden?.estadoOrden === "CERRADA"
+
   const [form, setForm] = useState({
     // ahora usamos un arreglo dinámico de servicios
     serviciosSeleccionados: [], // ej. ["S1", "S2"]
@@ -55,7 +59,7 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
    *  Handlers
    * ========================= */
   const handleChange = (e) => {
-    if (readOnly) return;
+    if (estaBloqueado) return;
     const { name, value } = e.target;
 
     setForm((prev) => ({
@@ -65,7 +69,7 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
   };
 
   const toggleServicio = (codigoServicio) => {
-    if (readOnly) return;
+    if (estaBloqueado) return;
 
     setForm((prev) => {
       const yaEsta = prev.serviciosSeleccionados.includes(codigoServicio);
@@ -86,6 +90,8 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
     console.log("Datos servicio/reparación a guardar:", form);
     alert("Luego conectamos este Guardar con el backend 😄");
   };
+
+
 
   /* =========================
    *  Render
@@ -120,7 +126,7 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
                   type="button"
                   onClick={() => toggleServicio(codigo)}
                   className={`servicio-chip ${activo ? "activo" : ""}`}
-                  disabled={readOnly}
+                  disabled={estaBloqueado}
                 >
                     <div className="servicio-codigo">{codigo}</div>
                     <div className="servicio-descripcion">
@@ -141,7 +147,7 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
             name="infoLlantas"
             value={form.infoLlantas}
             onChange={handleChange}
-            disabled={readOnly}
+            disabled={estaBloqueado}
           />
         </div>
 
@@ -156,12 +162,12 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
             name="revisionFallasCliente"
             value={form.revisionFallasCliente}
             onChange={handleChange}
-            disabled={readOnly}
+            disabled={estaBloqueado}
           />
         </div>
 
         {/* Botón Guardar */}
-        {!readOnly && (
+        {!estaBloqueado && (
           <div className="text-center mt-4">
             <button
               type="button"
@@ -173,8 +179,6 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false }) 
           </div>
         )}
 
-        {/* Debug opcional */}
-        {/* <pre>{JSON.stringify(form, null, 2)}</pre> */}
       </div>
     </div>
   );
