@@ -53,16 +53,17 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     const refSolicitadas = orden.refaccionesSolicitadas || [];
 
     // 3. Identificar cuáles de las que están en el presupuesto vienen de "Refacciones Solicitadas"
-    const presupuestoActualizado = presupuestoGuardado.filter(filaPres => {
-      const refOriginal = refSolicitadas.find(rs => rs.refaccion === filaPres.concepto);
-      if (refOriginal) {
-        return refOriginal.estatus === "APROBADA";
-      }
-      return true; 
-    });
+    const presupuestoActualizado = [...presupuestoGuardado];
 
     // 4. Agregar las que son nuevas APROBADAS que no estaban antes
     const aprobadas = refSolicitadas.filter(r => r.estatus === "APROBADA");
+
+    const mapEstatus = (estatus) => {
+      if (estatus === "APROBADA") return "AUTORIZADO";
+      if (estatus === "RECHAZADA") return "RECHAZADO";
+      return "PENDIENTE";
+    };
+
     aprobadas.forEach(aprob => {
       const yaExiste = presupuestoActualizado.some(p => p.concepto === aprob.refaccion);
       if (!yaExiste) {
@@ -79,12 +80,33 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
           horasMO: 0,
           precioVenta: aprob.precioUnitario ?? 0,
           observInt: aprob.observaciones ?? "",
+          estatus: mapEstatus(aprob.estatus),
           isRefaccionVinculada: true
         });
       }
     });
 
-    setPresRows(presupuestoActualizado);
+    const existingPres = [...presRows];
+
+    const presupuestoSincronizado = presupuestoActualizado.map(p => {
+
+      const refOriginal = refSolicitadas.find(rs => rs.refaccion === p.concepto);
+
+      // Usar snapshot, no presRows directo
+      const existente = existingPres.find(x => x.codigo === p.codigo);
+
+      const estatusFinal = p.isManual ? (p.estatus || "PENDIENTE") : refOriginal? mapEstatus(refOriginal.estatus): (p.estatus || "PENDIENTE");
+
+      return {
+        ...p,
+        estatus: estatusFinal
+      };
+
+    });
+
+
+
+    setPresRows(presupuestoSincronizado);
     
     if (orden.ventaCliente) setVentaRows(orden.ventaCliente);
     if (orden.manoObra) setMoRows(orden.manoObra);
@@ -106,7 +128,9 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     const finalPrecioVenta = newPresLine.precioVenta || newPresLine.precioCompra || 0;
     const registroParaAgregar = { 
       ...newPresLine, 
-      precioVenta: finalPrecioVenta 
+      precioVenta: finalPrecioVenta ,
+      estatus: "PENDIENTE",
+      isManual: true
     };
 
     const nuevasFilas = [...presRows, registroParaAgregar];
@@ -141,7 +165,7 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
   const handleImprimir = async () => {
     try {
       const payload = {
-        presupuesto: presRows,
+        presupuesto: presRows, // 🔥 TODAS las filas
         ventaCliente: ventaRows,
         manoObra: moRows,
         observacionesExternas: obsExternas,
@@ -152,8 +176,11 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
       };
 
       const res = await savePresupuestoVenta(orden._id, payload);
+
       if (onSaved) onSaved(res.data.vehiculo);
+
       openPresupuestoPdf(orden._id);
+
     } catch (err) {
       console.error("Error al imprimir:", err);
       alert("Error al preparar el PDF");
@@ -273,35 +300,36 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     setMoRows((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleEnviar = () => {
+  const handleEnviar = async () => {
     if (isClosed) return;
-    alert("Luego conectamos 'Enviar' al flujo de asesor / ventas.");
-  };
 
-  const handleAutorizar = async () => {
-    if (isClosed) return;
     try {
-      if (presRows.length === 0) {
-        alert("No hay partidas de presupuesto para autorizar.");
-        return;
-      }
-      const nuevasVentas = presRows.map((r) => ({
-        cant: r.cant || 0,
+      const autorizados = presRows.filter(r => r.estatus === "AUTORIZADO");
+
+      //SI NO HAY AUTORIZADOS → LIMPIAR
+      const ventasFinales = autorizados.map(r => ({
+        cant: Number(r.cant) || 0,
         concepto: r.concepto || r.refaccion || "",
         precioVenta: Number(r.precioVenta) || 0,
         observaciones: "",
       }));
-      setVentaRows(nuevasVentas);
-      const payload = {
+
+      setVentaRows(ventasFinales); // ← esto ahora puede ser []
+
+      await savePresupuestoVenta(orden._id, {
         presupuesto: presRows,
-        ventaCliente: nuevasVentas,
-      };
-      const res = await savePresupuestoVenta(orden._id, payload);
-      if (onSaved) onSaved(res.data.vehiculo);
-      alert("Presupuesto autorizado y enviado a Venta al Cliente.");
+        ventaCliente: ventasFinales,
+      });
+
+      if (ventasFinales.length === 0) {
+        alert("No hay partidas autorizadas. Venta al cliente limpiada.");
+      } else {
+        alert("Enviado correctamente a Venta al Cliente.");
+      }
+
     } catch (err) {
       console.error(err);
-      alert("Error al autorizar el presupuesto.");
+      alert("Error al enviar.");
     }
   };
 
@@ -324,7 +352,7 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     }
   };
 
-  const handleRechazar = () => { if (isClosed) return; alert("Rechazado..."); };
+  // const handleRechazar = () => { if (isClosed) return; alert("Rechazado..."); };
   const handleRegresarRefaccionaria = () => { if (isClosed) return; alert("Regresando..."); };
 
   const handleEditClick = (idx) => {
@@ -335,6 +363,74 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
   const handleSaveEdit = () => {
     setEditingCell({ row: null, field: null });
   };
+
+  // Boton Presupuesto 
+  const handleGuardarEncabezado = async () => {
+  if (isClosed) return;
+
+  try {
+    const payload = {
+      dirigidoA,
+      departamento,
+      observCotizacion,
+
+      // opcional pero recomendable para no perder info actual
+      presupuesto: presRows,
+      ventaCliente: ventaRows,
+      manoObra: moRows,
+      observacionesExternas: obsExternas,
+      observacionesInternas: obsInternas,
+    };
+
+    const res = await savePresupuestoVenta(orden._id, payload);
+
+    if (onSaved) onSaved(res.data.vehiculo);
+
+    alert("Datos guardados correctamente ✅");
+  } catch (err) {
+    console.error(err);
+    alert("Error al guardar los datos ❌");
+  }
+};
+
+const handleAutorizarFila = async (idx) => {
+  if (isClosed) return;
+
+  try {
+    const nuevasPres = [...presRows];
+    nuevasPres[idx].estatus = "AUTORIZADO";
+
+    setPresRows(nuevasPres);
+
+    await savePresupuestoVenta(orden._id, {
+      presupuesto: nuevasPres,
+      ventaCliente: ventaRows,
+    });
+
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const handleRechazarFila = async (idx) => {
+  if (isClosed) return;
+
+  try {
+    const nuevasPres = [...presRows];
+    nuevasPres[idx].estatus = "RECHAZADO";
+
+    setPresRows(nuevasPres);
+
+    await savePresupuestoVenta(orden._id, {
+      presupuesto: nuevasPres,
+      ventaCliente: ventaRows,
+    });
+
+  } catch (err) {
+    console.error(err);
+  }
+};
+
 
 return (
     <div className="card">
@@ -378,6 +474,17 @@ return (
           />
         </div>
 
+        <div className="d-flex justify-content-end mb-3">
+          <button
+            type="button"
+            className="btn btn-success btn-sm"
+            disabled={isClosed}
+            onClick={handleGuardarEncabezado}
+          >
+            Guardar
+          </button>
+        </div>
+
         {/* =================== PRESUPUESTO =================== */}
         <h5 className="text-center mb-2 fw-bold">PRESUPUESTO</h5>
 
@@ -398,6 +505,7 @@ return (
                 <th>Precio Venta (Sin IVA)</th>
                 <th className="table-secondary">Importe</th>
                 <th>Obs. Internas</th>
+                <th>Estatus</th>
                 <th style={{ width: "100px" }}>Acción</th>
               </tr>
             </thead>
@@ -405,6 +513,8 @@ return (
               {presRows.map((r, idx) => {
                 const isEditingRow = editingCell.row === idx && editingCell.field === 'all';
                 const importeFila = (Number(r.cant) || 0) * (Number(r.precioVenta) || 0);
+                const isAutorizado = r.estatus === "AUTORIZADO";
+                const isRechazado = r.estatus === "RECHAZADO";
 
                 return (
                   <tr key={idx} className={isEditingRow ? "table-warning" : ""}>
@@ -476,12 +586,21 @@ return (
                       ) : (r.observInt)}
                     </td>
                     <td className="text-center">
-                      {isEditingRow ? (
-                        <button type="button" className="btn btn-sm btn-success w-100" onClick={handleSaveEdit}>Listo</button>
+                      {r.estatus === "AUTORIZADO" ? (
+                        <span className="badge bg-success">Autorizado</span>
+                      ) : r.estatus === "RECHAZADO" ? (
+                        <span className="badge bg-danger">Rechazado</span>
                       ) : (
+                        <span className="badge bg-secondary">Pendiente</span>
+                      )}
+                    </td>
+                    <td className="text-center">
+                      {!isAutorizado && !isRechazado && (
                         <div className="btn-group-vertical w-100">
-                          <button type="button" className="btn btn-sm btn-outline-primary" disabled={isClosed} onClick={() => handleEditClick(idx)}>Editar</button>
+                          <button type="button" className="btn btn-sm btn-outline-primary" disabled={isClosed} onClick={() => handleEditClick(idx)}> Editar</button>
                           <button type="button" className="btn btn-sm btn-danger" disabled={isClosed} onClick={() => removePresRow(idx)}>Borrar</button>
+                          <button type="button" className="btn btn-success" disabled={isClosed} onClick={() => handleAutorizarFila(idx)}>Autorizar</button>
+                          <button type="button" className="btn btn-outline-danger" disabled={isClosed} onClick={() => handleRechazarFila(idx)}>Rechazar</button>
                         </div>
                       )}
                     </td>
@@ -533,8 +652,6 @@ return (
         <div className="d-flex justify-content-end gap-2 mb-4">
           <button type="button" className="btn btn-danger btn-sm shadow-sm" onClick={handleImprimir}>Imprimir</button>
           <button type="button" className="btn btn-success btn-sm" disabled={isClosed} onClick={handleEnviar}>Enviar</button>
-          <button type="button" className="btn btn-primary btn-sm" disabled={isClosed} onClick={handleAutorizar}>Autorizado</button>
-          <button type="button" className="btn btn-outline-danger btn-sm" disabled={isClosed} onClick={handleRechazar}>Rechazado</button>
           <button type="button" className="btn btn-outline-secondary btn-sm" disabled={isClosed} onClick={handleRegresarRefaccionaria}>Regresar a Refaccionaria</button>
         </div>
 

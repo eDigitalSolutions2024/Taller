@@ -209,6 +209,7 @@ servicioReparacion: {
         horasMO: { type: Number, default: 0 },
         precioVenta: { type: Number, default: 0 },
         observInt: { type: String, default: "" },
+        estatus: { type: String, enum: ["PENDIENTE", "AUTORIZADO", "RECHAZADO"], default: "PENDIENTE"}
       },
     ],
 

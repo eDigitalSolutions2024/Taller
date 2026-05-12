@@ -38,83 +38,412 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     <html>
       <head>
         <style>
-          @page { size: Letter; margin: 10mm; }
-          body { font-family: 'Helvetica', Arial, sans-serif; font-size: 10px; color: #333; margin: 0; padding: 0; }
-          
-          /* ENCABEZADO ACTUALIZADO (IMAGE_70420C) */
-          .header-container { 
-            display: grid; 
-            grid-template-columns: 1fr 2fr 1fr; 
-            align-items: center; 
-            margin-bottom: 20px;
-          }
-          
-          .qr-placeholder { 
-            width: 80px; height: 80px; 
-            border: 1px solid #ccc; border-radius: 4px; 
-            display: flex; align-items: center; justify-content: center; 
-            color: #999; font-size: 12px;
+           @page {
+            size: Letter;
+            margin: 6mm;
           }
 
-          .brand-info { text-align: center; }
-          .brand-name { color: #0047ba; font-size: 24px; font-weight: bold; margin: 0; }
-          .slogan { font-size: 10px; color: #444; margin: 2px 0; }
-          .address { font-size: 8.5px; color: #666; line-height: 1.2; }
-
-          .meta-info { text-align: right; font-size: 9px; }
-          .asesor-text { font-weight: bold; text-transform: uppercase; }
-
-          /* DATOS DEL VEHÍCULO (ESTILO BADGE) */
-          .v-data-bar { 
-            display: flex; justify-content: center; gap: 15px; 
-            background: #f1f5f9; padding: 6px; border-radius: 4px; 
-            margin-bottom: 15px; border: 1px solid #e2e8f0;
+          * {
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
           }
-          .v-item { font-size: 9px; }
-          .v-item strong { color: #0047ba; }
 
-          /* TABLA L18 */
-          .main-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-          .main-table th { background-color: #0047ba; color: white; padding: 8px; border: 1px solid #0047ba; text-transform: uppercase; }
-          .main-table td { border: 1px solid #ddd; padding: 7px; text-align: center; }
-          .text-left { text-align: left !important; }
-          .text-right { text-align: right !important; }
+          body {
+            margin: 0;
+            padding: 0;
+            font-size: 9px;
+            color: #000;
+          }
 
-          .footer-layout { display: flex; justify-content: space-between; margin-top: 15px; }
-          .obs-box { width: 65%; border: 1px solid #000; padding: 10px; font-size: 9px; min-height: 50px; }
-          .totals-box { width: 30%; font-size: 11px; }
-          .total-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #eee; }
-          .grand-total { font-weight: bold; font-size: 14px; color: #0047ba; border-top: 2px solid #0047ba; margin-top: 5px; padding-top: 5px; }
+          /* =========================================
+              HEADER
+          ========================================= */
+
+          .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 4px;
+          }
+
+          .header-table td {
+            border: none;
+            vertical-align: top;
+          }
+
+          .header-qr {
+            width: 32mm;
+          }
+
+          .qr-box {
+            width: 30mm;
+            height: 30mm;
+            border: 1px solid #6B7280;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6B7280;
+            font-size: 10px;
+          }
+
+          .header-center {
+            text-align: center;
+          }
+
+          .brand-name {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: .5px;
+            color: #1D4ED8;
+            margin-top: 6px;
+            line-height: 1;
+          }
+
+          .brand-slogan {
+            font-size: 9px;
+            color: #4B5563;
+            margin-top: 2px;
+          }
+
+          .header-address {
+            font-size: 7.5px;
+            color: #6B7280;
+            margin-top: 2px;
+            line-height: 1.2;
+          }
+
+          .header-right {
+            width: 38mm;
+            text-align: right;
+            font-size: 8px;
+          }
+
+          .asesor-text {
+            font-weight: bold;
+          }
+
+          .folio {
+            color: #DC2626;
+            font-size: 15px;
+            font-weight: 800;
+            margin-top: 6px;
+          }
+
+          .fecha {
+            margin-top: 2px;
+            color: #6B7280;
+          }
+
+          /* =========================================
+              TABLAS GENERALES
+          ========================================= */
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border: 0.8px solid #000;
+            padding: 2px 4px;
+            vertical-align: middle;
+          }
+
+          .text-left {
+            text-align: left !important;
+          }
+
+          .text-right {
+            text-align: right !important;
+          }
+
+          .center {
+            text-align: center;
+          }
+
+          /* =========================================
+              INFO CLIENTE / VEHICULO
+          ========================================= */
+
+          .info-table {
+            margin-top: 3px;
+            margin-bottom: 5px;
+            font-size: 9px;
+          }
+
+          .info-table td {
+            padding: 3px 4px;
+          }
+
+          .label-cell {
+            background: #E5E7EB;
+            font-weight: bold;
+          }
+
+          .service-label {
+            background: #1D4ED8;
+            color: white;
+            text-align: center;
+            font-weight: bold;
+          }
+
+          .folio-cell {
+            color: #DC2626;
+            font-weight: bold;
+            text-align: center;
+            font-size: 11px;
+          }
+
+          .vehicle-header td,
+          .vehicle-header {
+            background: #E5E7EB;
+            font-weight: bold;
+            text-align: center;
+          }
+
+          /* =========================================
+              SECCIONES AZULES
+          ========================================= */
+
+          .section-title {
+            background: #1D4ED8;
+            color: #FFFFFF;
+            font-weight: bold;
+            text-align: center;
+            padding: 2px 0;
+            margin-top: 3px;
+            letter-spacing: 2px;
+            font-size: 10px;
+          }
+
+          .sub-title {
+            background: #E5E7EB;
+            font-weight: bold;
+            text-align: center;
+            padding: 1px 0;
+            border-left: 0.8px solid #000;
+            border-right: 0.8px solid #000;
+          }
+
+          .grey-header {
+            background: #E5E7EB;
+            font-weight: bold;
+          }
+
+          /* =========================================
+              TABLA PRINCIPAL
+          ========================================= */
+
+          .main-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+            font-size: 9px;
+          }
+
+          .main-table th {
+            background: #1D4ED8;
+            color: white;
+            padding: 5px;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: .5px;
+            border: 0.8px solid #1D4ED8;
+          }
+
+          .main-table td {
+            padding: 5px;
+            border: 0.8px solid #000;
+          }
+
+          .main-table tbody tr:nth-child(even) {
+            background: #FAFAFA;
+          }
+
+          .main-table td:nth-child(1) {
+            font-weight: bold;
+            text-align: center;
+          }
+
+          .main-table td:nth-child(3) {
+            font-size: 8px;
+            text-align: center;
+          }
+
+          .main-table td:nth-child(4),
+          .main-table td:nth-child(5) {
+            font-weight: bold;
+          }
+
+          /* =========================================
+              FOOTER / TOTALES
+          ========================================= */
+
+          .footer-layout {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            gap: 6px;
+          }
+
+          .obs-box {
+            width: 68%;
+            border: 0.8px solid #000;
+            padding: 6px;
+            font-size: 8px;
+            min-height: 45px;
+          }
+
+          .totals-box {
+            width: 30%;
+            font-size: 9px;
+          }
+
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            border-bottom: 1px solid #DDD;
+          }
+
+          .grand-total {
+            font-weight: bold;
+            font-size: 13px;
+            color: #1D4ED8;
+            border-top: 2px solid #1D4ED8;
+            margin-top: 4px;
+            padding-top: 4px;
+          }
+
+          /* =========================================
+              ALTURAS
+          ========================================= */
+
+          .medium-cell {
+            height: 50px;
+          }
+
+          .large-cell {
+            height: 75px;
+          }
+
+          /* =========================================
+              UTILIDADES
+          ========================================= */
+
+          .small {
+            font-size: 8px;
+          }
+
+          .label {
+            font-weight: bold;
+          }
+
+          ul {
+            margin: 0;
+            padding-left: 14px;
+          }
+
+          li {
+            margin-bottom: 2px;
+          }
+
+          .no-border td, .no-border th { border: none; }
         </style>
       </head>
       <body>
-        <div class="header-container">
-          <div class="qr-placeholder">QR</div>
-          
-          <div class="brand-info">
-            <h1 class="brand-name">Autoservicio D y G</h1>
-            <p class="slogan">Profesionales al servicio de su automóvil</p>
-            <p class="address">
-              32370, Av Valentín Fuentes Varela 1779, La Fuente,<br>
-              32370 Juárez, Chih. Tel: (656) ***-****
-            </p>
-          </div>
+        <table class ="no-border">
+            <tr>
+              <td style="width: 25mm; vertical-align: top;">
+                <div class="qr-box">QR</div>
+              </td>
+              <td style="text-align: center;">
+                <div class="brand-name">Autoservicio D y G</div>
+                <div class="brand-slogan">Profesionales al servicio de su automóvil</div>
+                <div class="header-address">
+                  32370, Av Valentín Fuentes Varela 1779, La Fuente, 32370 Juárez, Chih.
+                  Tel: (656) *********
+                </div>
+              </td>
+              <td style="width: 40mm; text-align: right; font-size: 9px; vertical-align: top;">
+                <div class="small"><span class="label">ASESOR:</span> admin</div>
+              </td>
+            </tr>
+          </table>
 
-          <div class="meta-info">
-            <div class="asesor-text">ASESOR: ${orden.asesor || 'admin'}</div>
-            <div style="margin-top: 10px; color: red; font-weight: bold; font-size: 14px;">
-              FOLIO: L-${orden._id.toString().slice(-4).toUpperCase()}
-            </div>
-            <div>${fechaActual}</div>
-          </div>
-        </div>
+        <table class="info-table">
+          <tr>
+            <td class="label-cell">NOMBRE DEL CLIENTE:</td>
+            <td colspan="3">${orden.nombreCliente || 'CLIENTE GENERAL'}</td>
 
-        <div class="v-data-bar">
-          <div class="v-item"><strong>PLACAS:</strong> ${orden.placas || 'N/A'}</div>
-          <div class="v-item"><strong>UNIDAD:</strong> ${orden.marca} ${orden.modelo}</div>
-          <div class="v-item"><strong>KM:</strong> ${orden.kilometraje || '0'}</div>
-          <div class="v-item"><strong>COLOR:</strong> ${orden.color || 'N/A'}</div>
-        </div>
+            <td class="service-label">ORDEN DE SERVICIO:</td>
+            <td class="folio-cell">
+              L-${orden._id.toString().slice(-4).toUpperCase()}
+            </td>
+          </tr>
+
+          <tr>
+            <td class="label-cell">FECHA DE RECEPCIÓN:</td>
+            <td>${fechaActual}</td>
+
+            <td class="label-cell">CORREO</td>
+            <td colspan="3">${orden.correo || 'N/A'}</td>
+          </tr>
+
+          <tr>
+            <td class="label-cell">RFC:</td>
+            <td>${orden.rfc || 'N/A'}</td>
+
+            <td class="label-cell">TELÉFONO</td>
+            <td>${orden.telefono || 'N/A'}</td>
+
+            <td class="label-cell">CELULAR</td>
+            <td>${orden.celular || 'N/A'}</td>
+          </tr>
+
+          <tr>
+            <td class="label-cell">DIRECCIÓN:</td>
+            <td colspan="5">${orden.direccion || 'N/A'}</td>
+          </tr>
+
+          <!-- DATOS VEHICULO -->
+          <tr class="vehicle-header">
+            <td>MARCA</td>
+            <td>MODELO</td>
+            <td>AÑO</td>
+            <td>COLOR</td>
+            <td>NACIONALIDAD</td>
+            <td>SERIE</td>
+          </tr>
+
+          <tr>
+            <td>${orden.marca || ''}</td>
+            <td>${orden.modelo || ''}</td>
+            <td>${orden.anio || ''}</td>
+            <td>${orden.color || ''}</td>
+            <td>${orden.nacionalidad || ''}</td>
+            <td>${orden.serie || ''}</td>
+          </tr>
+
+          <tr class="vehicle-header">
+            <td>PLACAS</td>
+            <td>MOTOR</td>
+            <td>KMS/MILLAS</td>
+            <td>DIRIGIDO A</td>
+            <td>NÚMERO ECONÓMICO</td>
+            <td>DEPARTAMENTO</td>
+          </tr>
+
+          <tr>
+            <td>${orden.placas || ''}</td>
+            <td>${orden.motor || ''}</td>
+            <td>${orden.kilometraje || ''}</td>
+            <td>${orden.dirigidoA || ''}</td>
+            <td>${orden.numeroEconomico || ''}</td>
+            <td>${orden.departamento || ''}</td>
+          </tr>
+        </table>
 
         <table class="main-table">
           <thead>
