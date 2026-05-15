@@ -164,8 +164,10 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
 
   const handleImprimir = async () => {
     try {
+
+      // 🔥 GUARDAR TODO
       const payload = {
-        presupuesto: presRows, // 🔥 TODAS las filas
+        presupuesto: presRows,
         ventaCliente: ventaRows,
         manoObra: moRows,
         observacionesExternas: obsExternas,
@@ -179,6 +181,7 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
 
       if (onSaved) onSaved(res.data.vehiculo);
 
+      // 🔥 SOLO IMPRIMIR AUTORIZADOS
       openPresupuestoPdf(orden._id);
 
     } catch (err) {
@@ -195,12 +198,15 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     }).format(Number(n) || 0);
 
   const totalPresupuesto = useMemo(
-  () =>
-    presRows.reduce(
-      (acc, r) => acc + (Number(r.cant || 0) * Number(r.precioVenta || 0)),
-      0
-    ),
-  [presRows]
+    () =>
+      presRows
+        .filter(r => r.estatus === "AUTORIZADO")
+        .reduce(
+          (acc, r) =>
+            acc + (Number(r.cant || 0) * Number(r.precioVenta || 0)),
+          0
+        ),
+    [presRows]
   );
 
   const totalVentaCliente = useMemo(

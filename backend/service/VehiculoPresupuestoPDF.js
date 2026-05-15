@@ -13,7 +13,7 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     const horaActual = dayjs().format('hh:mm a');
 
     // Consolidación de conceptos
-    const itemsRefacciones = (orden.presupuesto || []).map(r => ({
+    const itemsRefacciones = (orden.presupuesto || []).filter(r => r.estatus === "AUTORIZADO").map(r => ({
       cant: r.cant,
       desc: `${r.concepto} ${r.refaccion ? '- ' + r.refaccion : ''}`,
       tipo: r.tipo || 'N/A',
