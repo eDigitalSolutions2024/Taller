@@ -407,6 +407,8 @@ const handleAutorizarFila = async (idx) => {
       ventaCliente: ventaRows,
     });
 
+    setEditingCell({ row: null, field: null });
+
   } catch (err) {
     console.error(err);
   }
@@ -425,6 +427,8 @@ const handleRechazarFila = async (idx) => {
       presupuesto: nuevasPres,
       ventaCliente: ventaRows,
     });
+
+    setEditingCell({ row: null, field: null });
 
   } catch (err) {
     console.error(err);
