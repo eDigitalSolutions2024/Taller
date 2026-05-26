@@ -3,7 +3,6 @@ import http from "./http";
 import axios from "axios"
 const API = process.env.REACT_APP_API_URL || "http://localhost:8010";
 
-
 // Crear una nueva "entrada de vehículo" para un cliente
 export const createVehiculo = (clienteId, data) =>
   http.post("/vehiculos", { clienteId, ...data });
@@ -22,17 +21,12 @@ export const getVehiculoById = (id) =>
 export const updateServicioReparacion = (id, servicioReparacion) =>
   http.put(`/vehiculos/${id}/servicio`, { servicioReparacion });
 
-
 export const saveRequisicionDiagnostico = (id, payload) =>
   http.put(`/vehiculos/${id}/requisicion-diagnostico`, payload);
-
-
 
 // 🔹 NUEVO: guardar presupuesto + venta al cliente
 export const savePresupuestoVenta = (id, payload) =>
   http.put(`/vehiculos/${id}/presupuesto-venta`, payload);
-
-
 
 // 👇 nuevo ayudante
 export const openOperativoPdf = (id) => {
@@ -50,7 +44,7 @@ export async function generarOrdenCompra(ordenId, refaccion) {
   const { data } = await http.post(`/vehiculos/${ordenId}/orden-compra`, {
     refaccion,
   });
-  return data; // aquí te puede regresar { numeroOC, idOC, ... }
+  return data;
 };
 
 // Agrega esto si no lo tienes
@@ -59,11 +53,23 @@ export const getEmpleados = () => axios.get(`${API}/empleados`);
 export const openPresupuestoPdf = (id) => {
   // Construye la URL hacia tu backend (asegúrate que la ruta coincida con la del server)
   const url = `${API}/vehiculos/${id}/presupuesto-pdf`;
-  
-  // Abre el PDF en una pestaña nueva
   window.open(url, "_blank", "noopener");
 };
 
 // Cerrar orden
 export const closeOrden = (id) =>
   http.put(`/vehiculos/${id}/cerrar`);
+
+// ✅ Agregado de edigitaltaller
+export const openVentaClientePdf = (id) => {
+  const url = `${API}/vehiculos/${id}/venta-cliente-pdf`;
+  window.open(url, "_blank", "noopener");
+};
+
+// ✅ Agregado de edigitaltaller
+export const marcarSurtidas = (id, presupuesto) =>
+  http.put(`/vehiculos/${id}/surtir`, { presupuesto });
+
+// ✅ Agregado de edigitaltaller
+export const updateDatosOrden = (id, payload) =>
+  http.put(`/vehiculos/${id}/datos`, payload);

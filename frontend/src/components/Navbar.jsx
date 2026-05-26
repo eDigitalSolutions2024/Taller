@@ -282,6 +282,22 @@ useEffect(() => {
               <span className="label">Salida Refacción</span>
             </NavLink>
 
+           { /*✅ Agregar DESPUÉS de "Salida Refacción" y ANTES del submenú Devoluciones*/}
+
+              <NavLink
+                to="/refaccionaria/solicitudes-taller"
+                className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+              >
+                <span className="label">Solicitudes Taller</span>
+              </NavLink>
+
+              <NavLink
+                to="/refaccionaria/por-surtir"
+                className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+              >
+                <span className="label">Por Surtir</span>
+              </NavLink>
+
 
 
             {/* SUBMENÚ: Devoluciones */}

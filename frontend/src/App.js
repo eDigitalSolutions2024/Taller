@@ -27,6 +27,10 @@ import ConsultarInventario from "./pages/refaccionaria/ConsultarInventario";
 import ConsultarFacturaProveedor from "./pages/refaccionaria/ConsultarFacturaProveedor.jsx";
 import BDCodigos from "./pages/refaccionaria/BDCodigos";
 
+import SolicitudesTaller from "./pages/refaccionaria/SolicitudesTaller";
+import SolicitudTallerDetalle from "./pages/refaccionaria/SolicitudTallerDetalle";
+//import PorSurtir from "./pages/refaccionaria/PorSurtir";
+
 // Proveedores
 import ProveedoresLayout from "./pages/proveedores/ProveedoresLayout";
 import AltaProveedor from "./pages/proveedores/AltaProveedor";
@@ -111,6 +115,10 @@ export default function App() {
             <Route index element={<Navigate to="entrada" replace />} />
             <Route path="entrada" element={<EntradaInventario />} />
             <Route path="salida" element={<SalidaRefaccion />} />
+
+            <Route path="solicitudes-taller" element={<SolicitudesTaller />} />
+            <Route path="solicitudes-taller/:id" element={<SolicitudTallerDetalle />} />
+            {/*<Route path="por-surtir" element={<PorSurtir />} />*/}
 
             {/* Devoluciones */}
             <Route path="devoluciones/*" element={<Devoluciones />}>
