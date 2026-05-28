@@ -55,6 +55,7 @@ export default function VehiculoOrdenDetalle() {
   const handleServicioSaved = (vehiculoActualizado) => {
     setOrden(vehiculoActualizado);
     setOrdenIniciada(true);
+    setTab("req");
   };
 
   if (loading) return <p className="text-center mt-4">Cargando orden...</p>;
@@ -123,6 +124,7 @@ export default function VehiculoOrdenDetalle() {
           <VehiculoRequisicionDiagnostico
             orden={orden}
             onSaved={(vActualizado) => setOrden(vActualizado)}
+            onGoPresupuesto={() => setTab("presupuesto")} // ✅ Agregar esto
             readOnly={isClosed} 
           />
         )}

@@ -280,7 +280,10 @@ export default function VehiculoEntrada() {
 
       {/* 👇 AQUÍ APARECE EL FORMULARIO GRANDE CUANDO DAN "Nuevo Carro" */}
       {mostrarFormNuevoCarro && clienteSeleccionado && (
-        <VehiculoNuevoForm cliente={clienteSeleccionado} />
+        <VehiculoNuevoForm 
+          cliente={clienteSeleccionado}
+          onCreated={(vehiculo) => navigate(`/vehiculo/orden/${vehiculo._id}`)}
+        />
       )}
 
       <small className="text-muted d-block mt-2">

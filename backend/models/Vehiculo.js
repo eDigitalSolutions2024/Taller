@@ -7,12 +7,14 @@ const ESTADOS_ORDEN = [
   'PENDIENTE_CAPTURA',
   'PENDIENTE_REFACCIONARIA',
   'PENDIENTE_AUTORIZACION',
+  'PENDIENTE_AUTORIZACION_CLIENTE',  // ✅ Agregado
+  'PENDIENTE_SURTIR',                // ✅ Agregado
+  'PENDIENTE_CIERRE',                // ✅ Agregado
   'REPARACION_EN_CURSO',
   'CALIDAD',
   'PENDIENTE_CERRAR',
   'CERRADA',
 ];
-
 const vehiculoSchema = new Schema(
   {
     // Referencia al cliente dueño del vehículo
@@ -164,6 +166,11 @@ servicioReparacion: {
           enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
           default: 'PENDIENTE',
         },
+
+        opciones: { type: Array, default: [] },
+        opcionSeleccionada: { type: Number, default: null },
+        tipoCambio: { type: Number, default: 0 },
+        precioCore: { type: Number, default: 0 },
 
 // 👇👇 NUEVOS CAMPOS PARA ORDEN DE COMPRA
         requiereOC: { type: Boolean, default: false },   // el checkbox del mecánico

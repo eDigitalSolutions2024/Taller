@@ -17,7 +17,7 @@ app.use(cors({
     // Permite requests sin origin (Postman, server-to-server)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin)) {app.use(express.json({ limit: '10mb' })); app.use(express.urlencoded({ limit: '10mb', extended: true }));
       return callback(null, true);
     }
 
@@ -26,8 +26,8 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
-
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const empleadosRoutes = require('./routes/empleados');
 const ordenesCompraRoutes = require('./routes/ordenesCompra');

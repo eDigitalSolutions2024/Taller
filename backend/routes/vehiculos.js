@@ -207,9 +207,10 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
     const { id } = req.params;
     const {
       diagnosticoTecnico,
-      refacciones,      // viene del frontend
-      cargosEnOrden,    // opcional, para después
-      estadoOrden,      // opcional, si quieres avanzar el flujo
+      refacciones,
+      cargosEnOrden,
+      manoObra,        // ✅ Agregar esto
+      estadoOrden,
     } = req.body;
 
     const vehiculo = await Vehiculo.findById(id);
@@ -217,49 +218,39 @@ router.put('/:id/requisicion-diagnostico', async (req, res) => {
       return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
     }
 
-    // Diagnóstico
-   if (diagnosticoTecnico !== undefined) {
-  const textoNuevo = String(diagnosticoTecnico || '').trim();
-
-  if (textoNuevo) {
-    // 🔥 ESTA LÍNEA ARREGLA EL ERROR
-    if (!Array.isArray(vehiculo.historialDiagnosticos)) {
-      vehiculo.historialDiagnosticos = [];
+    if (diagnosticoTecnico !== undefined) {
+      const textoNuevo = String(diagnosticoTecnico || '').trim();
+      if (textoNuevo) {
+        if (!Array.isArray(vehiculo.historialDiagnosticos)) {
+          vehiculo.historialDiagnosticos = [];
+        }
+        const ultimo = vehiculo.historialDiagnosticos[vehiculo.historialDiagnosticos.length - 1];
+        const ultimoTexto = String(ultimo?.texto || '').trim();
+        if (textoNuevo !== ultimoTexto) {
+          vehiculo.historialDiagnosticos.push({ texto: textoNuevo, fecha: new Date() });
+        }
+      }
+      vehiculo.diagnosticoTecnico = diagnosticoTecnico;
     }
 
-    const ultimo =
-      vehiculo.historialDiagnosticos[vehiculo.historialDiagnosticos.length - 1];
-
-    const ultimoTexto = String(ultimo?.texto || '').trim();
-
-    if (textoNuevo !== ultimoTexto) {
-      vehiculo.historialDiagnosticos.push({
-        texto: textoNuevo,
-        fecha: new Date(),
-      });
-    }
-  }
-
-  vehiculo.diagnosticoTecnico = diagnosticoTecnico;
-}
-    // Refacciones solicitadas (las que ves en la tabla)
     if (Array.isArray(refacciones)) {
-      // Aquí ya pueden venir requiereOC, ocGenerada, numeroOC, etc.
       vehiculo.refaccionesSolicitadas = refacciones;
     }
 
-    // Cargos en orden (para después, si los mandas)
     if (Array.isArray(cargosEnOrden)) {
       vehiculo.cargosEnOrden = cargosEnOrden;
     }
 
-    // Si quieres ir moviendo la orden de estado
+    // ✅ Agregar esto
+    if (Array.isArray(manoObra)) {
+      vehiculo.manoObra = manoObra;
+    }
+
     if (estadoOrden) {
       vehiculo.estadoOrden = estadoOrden;
     }
 
     await vehiculo.save();
-
     return res.json({ ok: true, vehiculo });
   } catch (err) {
     console.error('Error guardando requisicion/diagnostico:', err);
@@ -531,5 +522,49 @@ router.get('/:id/presupuesto-pdf', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error al generar PDF' });
   }
 });
+
+// PUT /api/vehiculos/:id/datos  -> admin actualiza datos del cliente / vehículo
+router.put('/:id/datos', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const camposPermitidos = [
+      'fechaRecepcion', 'horaRecepcion',
+      'nombreCliente', 'apellidoPaterno', 'apellidoMaterno',
+      'nombreGobierno', 'nombreContactoGobierno', 'nombreDependencia', 'nombreContactoDependencia',
+      'telefonoFijoLada', 'telefonoFijo', 'celularLada', 'celular',
+      'direccion', 'numeroExt', 'numeroInt', 'colonia', 'rfc',
+      'regimenFiscal', 'usoCFDI', 'codigoPostal', 'ciudad', 'estado',
+      'correo', 'correos',
+      'nombreUsuarioDejaVehiculo', 'marca', 'modelo', 'anio', 'color',
+      'serie', 'placas', 'kmsMillas', 'nacionalidad', 'motor', 'numeroEconomico', 'traccion',
+      'grua', 'precioGrua',
+      'espejoLateralIzq', 'espejoLateralDer', 'copasDelanterasIzq', 'copasDelanterasDer',
+      'parabrisas', 'focosDel', 'focosTras', 'espejoInt',
+      'tapetesDelanterosIzq', 'tapetesDelanterosDer', 'estereo', 'extra',
+      'copasTraserasIzq', 'copasTraserasDer', 'micas', 'antena', 'encendedor',
+      'tapetesTraserosIzq', 'tapetesTraserosDer', 'gato', 'bateria',
+      'nivelGasolina', 'danoVehiculo',
+      'checkEngine', 'abs', 'airBag', 'frenos', 'aceite', 'alternador',
+      'indicadoresTablero', 'otros', 'observaciones',
+    ];
+
+    const update = {};
+    camposPermitidos.forEach((campo) => {
+      if (req.body[campo] !== undefined) update[campo] = req.body[campo];
+    });
+
+    const vehiculo = await Vehiculo.findByIdAndUpdate(id, update, { new: true });
+    if (!vehiculo) {
+      return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
+    }
+
+    return res.json({ ok: true, vehiculo });
+  } catch (err) {
+    console.error('Error actualizando datos de orden:', err);
+    return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
+  }
+});
+
 
 module.exports = router;
