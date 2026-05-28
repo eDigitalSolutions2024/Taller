@@ -532,4 +532,76 @@ router.get('/:id/presupuesto-pdf', async (req, res) => {
   }
 });
 
+router.put('/:id/datos', async (req, res) => {
+  try {
+    const { id } = req.params;
+ 
+    const vehiculo = await Vehiculo.findById(id);
+    if (!vehiculo) {
+      return res.status(404).json({ ok: false, msg: 'Orden no encontrada' });
+    }
+ 
+    // Campos permitidos para actualizar (todo lo del formulario de entrada)
+    const camposPermitidos = [
+      // Cabecera
+      'ordenServicio', 'fechaRecepcion', 'horaRecepcion',
+      // Cliente particular
+      'nombreCliente', 'apellidoPaterno', 'apellidoMaterno',
+      // Cliente empresa/gobierno
+      'nombreGobierno', 'nombreContactoGobierno',
+      'nombreDependencia', 'nombreContactoDependencia',
+      // Contacto
+      'telefonoFijoLada', 'telefonoFijo', 'celularLada', 'celular',
+      // Dirección
+      'direccion', 'numeroExt', 'numeroInt', 'colonia',
+      'codigoPostal', 'ciudad', 'estado',
+      // Facturación
+      'rfc', 'regimenFiscal', 'usoCFDI', 'formaPago', 'metodoPago',
+      // Correos
+      'correos',
+      // Vehículo
+      'nombreUsuarioDejaVehiculo',
+      'marca', 'modelo', 'anio', 'color', 'serie', 'puertas',
+      'placas', 'kmsMillas',
+      'transmision', 'cilindros', 'combustion',
+      'seguroRines', 'llavesControl',
+      'nacionalidad', 'motor', 'numeroEconomico', 'traccion',
+      // Grúa
+      'grua', 'precioGrua',
+      // Accesorios
+      'espejoLateralIzq', 'espejoLateralDer',
+      'copasDelanterasIzq', 'copasDelanterasDer',
+      'parabrisas', 'focosDel', 'focosTras', 'espejoInt',
+      'tapetesDelanterosIzq', 'tapetesDelanterosDer',
+      'estereo', 'extra',
+      'cristalesExt', 'limpiadoresExt', 'cristalesInt', 'limpiadoresInt',
+      'copasTraserasIzq', 'copasTraserasDer',
+      'micas', 'antena', 'encendedor',
+      'tapetesTraserosIzq', 'tapetesTraserosDer',
+      'gato', 'bateria',
+      'llaveRueda', 'extintor', 'llantaExtra', 'cablesCorrente', 'cruceta',
+      // Daño y gasolina
+      'danoVehiculo', 'nivelGasolina',
+      // Fotos
+      'fotosVehiculo',
+      // Indicadores tablero
+      'checkEngine', 'abs', 'airBag', 'frenos', 'aceite', 'alternador',
+      'otros', 'observaciones',
+    ];
+ 
+    camposPermitidos.forEach((campo) => {
+      if (req.body[campo] !== undefined) {
+        vehiculo[campo] = req.body[campo];
+      }
+    });
+ 
+    await vehiculo.save();
+ 
+    return res.json({ ok: true, vehiculo });
+  } catch (err) {
+    console.error('Error actualizando datos de la orden:', err);
+    return res.status(500).json({ ok: false, msg: 'Error en el servidor' });
+  }
+});
+
 module.exports = router;

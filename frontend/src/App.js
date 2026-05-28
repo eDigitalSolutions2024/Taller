@@ -27,6 +27,7 @@ import ConsultarInventario from "./pages/refaccionaria/ConsultarInventario";
 import ConsultarFacturaProveedor from "./pages/refaccionaria/ConsultarFacturaProveedor.jsx";
 import BDCodigos from "./pages/refaccionaria/BDCodigos";
 
+
 import SolicitudesTaller from "./pages/refaccionaria/SolicitudesTaller";
 import SolicitudTallerDetalle from "./pages/refaccionaria/SolicitudTallerDetalle";
 //import PorSurtir from "./pages/refaccionaria/PorSurtir";
