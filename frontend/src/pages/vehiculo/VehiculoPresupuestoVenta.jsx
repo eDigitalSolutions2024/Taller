@@ -67,21 +67,27 @@ export default function VehiculoPresupuestoVenta({ orden, onSaved, empleados = [
     aprobadas.forEach(aprob => {
       const yaExiste = presupuestoActualizado.some(p => p.concepto === aprob.refaccion);
       if (!yaExiste) {
+        
+        // ← AGREGAR: tomar datos de la opción seleccionada o la primera
+        const op = Array.isArray(aprob.opciones) && aprob.opciones.length > 0
+          ? (aprob.opciones.find(o => o.seleccionada) || aprob.opciones[0])
+          : null;
+
         presupuestoActualizado.push({
-          cant: aprob.cant ?? 0,
-          concepto: aprob.refaccion || "",
-          refaccion: aprob.refaccion || "",
-          tipo: aprob.tipo || "",
-          marca: aprob.marca || "",
-          proveedor: aprob.proveedor || "",
-          codigo: aprob.codigo || "",
-          precioCompra: aprob.precioUnitario ?? 0,
-          tiempoEntrega: aprob.tiempoEntrega ?? "",
-          horasMO: 0,
-          precioVenta: aprob.precioUnitario ?? 0,
-          observInt: aprob.observaciones ?? "",
-          estatus: mapEstatus(aprob.estatus),
-          isRefaccionVinculada: true
+          cant:          aprob.cant ?? 0,
+          concepto:      aprob.refaccion || "",
+          refaccion:     aprob.refaccion || "",
+          tipo:          op?.tipo          || aprob.tipo          || "",
+          marca:         op?.marca         || aprob.marca         || "",
+          proveedor:     op?.proveedor     || aprob.proveedor     || "",
+          codigo:        op?.codigo        || aprob.codigo        || "",
+          precioCompra:  op?.precioUnitario ?? aprob.precioUnitario ?? 0,
+          tiempoEntrega: op?.tiempoEntrega  ?? aprob.tiempoEntrega  ?? "",
+          horasMO:       0,
+          precioVenta:   op?.precioUnitario ?? aprob.precioUnitario ?? 0,
+          observInt:     op?.observaciones  ?? aprob.observaciones  ?? "",
+          estatus:       mapEstatus(aprob.estatus),
+          isRefaccionVinculada: true,
         });
       }
     });

@@ -154,13 +154,14 @@ export default function VehiculoServicioReparacion({ orden, readOnly = false, ya
         {/* Revisión fallas reportadas por el cliente */}
         <div className="mt-3">
           <label className="form-label fw-semibold">
-            REVISIÓN FALLAS REPORTADAS POR EL CLIENTE
+            OBSERVACIONES GENERALES
           </label>
           <textarea
             className="form-control"
             rows={3}
             name="revisionFallasCliente"
             value={form.revisionFallasCliente}
+            placeholder="Observaciones adicionales sobre el servicio o reparación..."
             onChange={handleChange}
             disabled={estaBloqueado}
           />

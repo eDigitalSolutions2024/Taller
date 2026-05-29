@@ -2,11 +2,11 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-// al inicio, antes del schema:
 const ESTADOS_ORDEN = [
   'PENDIENTE_CAPTURA',
   'PENDIENTE_REFACCIONARIA',
   'PENDIENTE_AUTORIZACION',
+  'PENDIENTE_AUTORIZACION_CLIENTE',
   'REPARACION_EN_CURSO',
   'CALIDAD',
   'PENDIENTE_CERRAR',
@@ -15,14 +15,8 @@ const ESTADOS_ORDEN = [
 
 const vehiculoSchema = new Schema(
   {
-    // Referencia al cliente dueño del vehículo
-    cliente: {
-      type: Schema.Types.ObjectId,
-      ref: 'Cliente',
-      required: true,
-    },
+    cliente: { type: Schema.Types.ObjectId, ref: 'Cliente', required: true },
 
-    // NUEVO: estado de la orden
     estadoOrden: {
       type: String,
       enum: ESTADOS_ORDEN,
@@ -30,224 +24,261 @@ const vehiculoSchema = new Schema(
       index: true,
     },
 
-    // ----- Datos de Orden / cabecera -----
-    ordenServicio: String,
+    // ── Cabecera ─────────────────────────────────────────────────────────────
+    ordenServicio:  String,
     fechaRecepcion: Date,
-    horaRecepcion: String,
+    horaRecepcion:  String,
 
-    //Presupuesto
-    dirigidoA: { type: String, default: ""},
-    departamento: { type: String, default: ""},
-    observCotizacion: { type: String, default: ""},
+    // Presupuesto (cotización)
+    dirigidoA:        { type: String, default: "" },
+    departamento:     { type: String, default: "" },
+    observCotizacion: { type: String, default: "" },
 
-    // ----- Datos de cliente / gobierno (snapshot en la orden) -----
-    // Particular
-    nombreCliente: String,
-    apellidoPaterno: String,
-    apellidoMaterno: String,
-    
-    nombreGobierno: String,
-    nombreContactoGobierno: String,
-    nombreDependencia: String,
+    // ── Datos de cliente (snapshot) ───────────────────────────────────────────
+    nombreCliente:             String,
+    apellidoPaterno:           String,
+    apellidoMaterno:           String,
+    nombreGobierno:            String,
+    nombreContactoGobierno:    String,
+    nombreDependencia:         String,
     nombreContactoDependencia: String,
 
     telefonoFijoLada: String,
-    telefonoFijo: String,
-    celularLada: String,
-    celular: String,
+    telefonoFijo:     String,
+    celularLada:      String,
+    celular:          String,
 
-    direccion: String,
-    numeroExt: String,
-    numeroInt: String,
-    colonia: String,
-    rfc: String,
+    direccion:    String,
+    numeroExt:    String,
+    numeroInt:    String,
+    colonia:      String,
+    rfc:          String,
+    regimenFiscal: String,   // ← NUEVO
+    usoCFDI:      String,    // ← NUEVO
     codigoPostal: String,
-    ciudad: String,
-    estado: String,
+    ciudad:       String,
+    estado:       String,
+    formaPago:    String,    // ← NUEVO
+    metodoPago:   String,    // ← NUEVO
 
-    // ----- Datos de vehículo -----
+    // ── Datos de vehículo ─────────────────────────────────────────────────────
     nombreUsuarioDejaVehiculo: String,
-    marca: String,
-    modelo: String,
-    anio: String,
-    color: String,
-    serie: String,
-    placas: String,
-    kmsMillas: String,
-    nacionalidad: String,
-    motor: String,
+    marca:          String,
+    modelo:         String,
+    anio:           String,
+    color:          String,
+    serie:          String,
+    puertas:        String,   // ← NUEVO
+    placas:         String,
+    kmsMillas:      String,
+    transmision:    String,   // ← NUEVO  STD / AUT
+    cilindros:      String,   // ← NUEVO  4 / 6 / 8
+    combustion:     String,   // ← NUEVO  Gasolina / Diesel / Híbrido / Eléctrico
+    seguroRines:    String,   // ← NUEVO  SI / NO
+    llavesControl:  String,   // ← NUEVO  SI / NO
+    nacionalidad:   String,
+    motor:          String,
     numeroEconomico: String,
-    correo: String,
-    traccion: String,
+    correo:         String,           // campo legacy (por compatibilidad)
+    correos:        [{ type: String }], // ← NUEVO (array de correos)
+    traccion:       String,
 
-    // ----- Accesorios / checkboxes -----
-    grua: String,
-    precioGrua: { type: Number, default: 0 },   
-    espejoLateralIzq: Boolean,
-    espejoLateralDer: Boolean,
-    copasDelanterasIzq: Boolean,
-    copasDelanterasDer: Boolean,
-    parabrisas: String,
-    focosDel: Boolean,
-    focosTras: Boolean,
-    espejoInt: Boolean,
+    // ── Accesorios / checkboxes ───────────────────────────────────────────────
+    grua:      String,
+    precioGrua: { type: Number, default: 0 },
+
+    // Espejo / Copas / Focos / Interior
+    espejoLateralIzq:     Boolean,
+    espejoLateralDer:     Boolean,
+    copasDelanterasIzq:   Boolean,
+    copasDelanterasDer:   Boolean,
+    parabrisas:           String,
+    focosDel:             Boolean,
+    focosTras:            Boolean,
+    espejoInt:            Boolean,
     tapetesDelanterosIzq: Boolean,
     tapetesDelanterosDer: Boolean,
-    estereo: Boolean,
-    extra: Boolean,
-    copasTraserasIzq: Boolean,
-    copasTraserasDer: Boolean,
-    micas: Boolean,
-    antena: Boolean,
-    encendedor: Boolean,
+    estereo:              Boolean,
+    extra:                Boolean,
+    // Inventario faltante del PDF ── NUEVOS ────────────────────────────────
+    cristalesExt:   Boolean,
+    limpiadoresExt: Boolean,
+    cristalesInt:   Boolean,
+    limpiadoresInt: Boolean,
+
+    // Copas Traseras / Tapetes / Otros
+    copasTraserasIzq:   Boolean,
+    copasTraserasDer:   Boolean,
+    micas:              Boolean,
+    antena:             Boolean,
+    encendedor:         Boolean,
     tapetesTraserosIzq: Boolean,
     tapetesTraserosDer: Boolean,
-    gato: Boolean,
-    bateria: Boolean,
+    gato:               Boolean,
+    bateria:            Boolean,
+    // Accesorios faltantes del PDF ── NUEVOS ───────────────────────────────
+    llaveRueda:     Boolean,
+    extintor:       Boolean,
+    llantaExtra:    Boolean,
+    cablesCorrente: Boolean,
+    cruceta:        Boolean,
 
-    // ----- Indicadores tablero / mecánicos -----
+    // Daño y gasolina
+    danoVehiculo:  String,   // ← NUEVO  base64 del canvas (JPEG comprimido)
+    nivelGasolina: String,   // ← corregido de Boolean → String ("E","1/4","1/2"…"F")
+
+    // Fotos del vehículo ── NUEVO ──────────────────────────────────────────
+    fotosVehiculo: [
+      {
+        id:   { type: String },
+        name: { type: String },
+        src:  { type: String }, // base64 comprimido
+      },
+    ],
+
+    // ── Indicadores tablero ───────────────────────────────────────────────────
     checkEngine: String,
-    abs: String,
-    airBag: String,
-    frenos: String,
-    aceite: String,
-    alternador: String,
+    abs:         String,
+    airBag:      String,
+    frenos:      String,
+    aceite:      String,
+    alternador:  String,
 
     indicadoresTablero: String,
-    otros: String,
-    observaciones: String,
+    otros:              String,
+    observaciones:      String,
 
-   // ===== Servicio o Reparación =====
-servicioReparacion: {
-  // lista de códigos S1, S2, S3... que seleccionas en la tabla
-  serviciosSeleccionados: [{ type: String }],
-
-  infoLlantas: { type: String, default: "" },
-  revisionFallas: { type: String, default: "" },
-},
-
-    // indica si la orden ya fue “iniciada” desde Servicio/Reparación
-    ordenIniciada: {
-      type: Boolean,
-      default: false,
+    // ── Servicio o Reparación ─────────────────────────────────────────────────
+    servicioReparacion: {
+      serviciosSeleccionados: [{ type: String }],
+      infoLlantas:    { type: String, default: "" },
+      revisionFallas: { type: String, default: "" },
     },
 
-    // ===== Requisición y diagnóstico =====
+    ordenIniciada: { type: Boolean, default: false },
+
+    // ── Requisición y Diagnóstico ─────────────────────────────────────────────
     diagnosticoTecnico: { type: String, default: "" },
 
     historialDiagnosticos: [
-  {
-    texto: { type: String, default: "" },
-    fecha: { type: Date, default: Date.now },
-    usuario: { type: String, default: "" },
-  }
-],
-
+      {
+        texto:   { type: String, default: "" },
+        fecha:   { type: Date,   default: Date.now },
+        usuario: { type: String, default: "" },
+      },
+    ],
 
     refaccionesSolicitadas: [
       {
-        cant: { type: Number, default: 0 },
-        unidad: { type: String, default: "" },
-        refaccion: { type: String, default: "" },
-        tipo: { type: String, default: "" }, // ej. SERVICIO / REFACCIÓN
-        marca: { type: String, default: "" },
-        proveedor: { type: String, default: "" },
-        codigo: { type: String, default: "" },
+        cant:           { type: Number, default: 0 },
+        unidad:         { type: String, default: "" },
+        refaccion:      { type: String, default: "" },
+        tipo:           { type: String, default: "" },
+        marca:          { type: String, default: "" },
+        proveedor:      { type: String, default: "" },
+        codigo:         { type: String, default: "" },
         precioUnitario: { type: Number, default: 0 },
-        importeTotal: { type: Number, default: 0 },
-        moneda: { type: String, default: "MN" },
-        tiempoEntrega: { type: String, default: "" },
-        core: { type: String, default: "" },
-        observaciones: { type: String, default: "" },
+        importeTotal:   { type: Number, default: 0 },
+        moneda:         { type: String, default: "MN" },
+        tiempoEntrega:  { type: String, default: "" },
+        core:           { type: String, default: "" },
+        observaciones:  { type: String, default: "" },
         estatus: {
           type: String,
           enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
           default: 'PENDIENTE',
         },
+        requiereOC: { type: Boolean, default: false },
+        ocGenerada:  { type: Boolean, default: false },
+        numeroOC:    { type: String,  default: null  },
+        ordenCompra: { type: Schema.Types.ObjectId, ref: 'OrdenCompra', default: null },
 
-// 👇👇 NUEVOS CAMPOS PARA ORDEN DE COMPRA
-        requiereOC: { type: Boolean, default: false },   // el checkbox del mecánico
-        ocGenerada: { type: Boolean, default: false },   // ya se generó al menos una OC
-        numeroOC:   { type: String,  default: null },    // folio de la OC principal
-        ordenCompra: {
-          type: Schema.Types.ObjectId,
-          ref: 'OrdenCompra',
-          default: null,
+        // ── AGREGAR ESTAS DOS LÍNEAS ──────────────────────────────
+        opciones:           { type: Array, default: [] },
+        opcionSeleccionada: { type: Number, default: null },
+        // ─────────────────────────────────────────────────────────
+
+        estatus: {
+          type: String,
+          enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
+          default: 'PENDIENTE',
+        },
+        requiereOC: { type: Boolean, default: false },
+        ocGenerada:  { type: Boolean, default: false },
+        numeroOC:    { type: String,  default: null  },
+        ordenCompra: { type: Schema.Types.ObjectId, ref: 'OrdenCompra', default: null },
+
+
+      },
+    ],
+
+    // ── Cargos en orden ───────────────────────────────────────────────────────
+    cargosEnOrden: [
+      {
+        cant:           { type: Number, default: 0 },
+        unidad:         { type: String, default: "" },
+        concepto:       { type: String, default: "" },
+        marca:          { type: String, default: "" },
+        proveedor:      { type: String, default: "" },
+        codigo:         { type: String, default: "" },
+        precioUnitario: { type: Number, default: 0 },
+        importeTotal:   { type: Number, default: 0 },
+        moneda:         { type: String, default: "MN" },
+        observaciones:  { type: String, default: "" },
+        documento:      { type: String, default: "" },
+      },
+    ],
+
+    // ── Presupuesto ───────────────────────────────────────────────────────────
+    presupuesto: [
+      {
+        cant:          { type: Number, default: 0 },
+        concepto:      { type: String, default: "" },
+        refaccion:     { type: String, default: "" },
+        tipo:          { type: String, default: "" },
+        marca:         { type: String, default: "" },
+        proveedor:     { type: String, default: "" },
+        codigo:        { type: String, default: "" },
+        precioCompra:  { type: Number, default: 0 },
+        tiempoEntrega: { type: String, default: "" },
+        horasMO:       { type: Number, default: 0 },
+        precioVenta:   { type: Number, default: 0 },
+        observInt:     { type: String, default: "" },
+        estatus: {
+          type: String,
+          enum: ["PENDIENTE", "AUTORIZADO", "RECHAZADO"],
+          default: "PENDIENTE",
         },
       },
     ],
 
-    // ===== Cargos en orden =====
-    cargosEnOrden: [
-      {
-        cant: { type: Number, default: 0 },
-        unidad: { type: String, default: "" },
-        concepto: { type: String, default: "" }, // “Refacción y/o Servicio”
-        marca: { type: String, default: "" },
-        proveedor: { type: String, default: "" },
-        codigo: { type: String, default: "" },
-        precioUnitario: { type: Number, default: 0 },
-        importeTotal: { type: Number, default: 0 },
-        moneda: { type: String, default: "MN" },
-        observaciones: { type: String, default: "" },
-        documento: { type: String, default: "" }, // p.ej. factura ligada
-      },
-    ],
-
-    // ===== Presupuesto (refacciones autorizadas) =====
-    presupuesto: [
-      {
-        cant: { type: Number, default: 0 },
-        concepto: { type: String, default: "" },
-        refaccion: { type: String, default: "" },
-        tipo: { type: String, default: "" },
-        marca: { type: String, default: "" },
-        proveedor: { type: String, default: "" },
-        codigo: { type: String, default: "" },
-        precioCompra: { type: Number, default: 0 },
-        tiempoEntrega: { type: String, default: "" },
-        horasMO: { type: Number, default: 0 },
-        precioVenta: { type: Number, default: 0 },
-        observInt: { type: String, default: "" },
-        estatus: { type: String, enum: ["PENDIENTE", "AUTORIZADO", "RECHAZADO"], default: "PENDIENTE"}
-      },
-    ],
-
-    // ===== Venta al Cliente (cierre) =====
+    // ── Venta al cliente ──────────────────────────────────────────────────────
     ventaCliente: [
       {
-        cant: { type: Number, default: 0 },
-        concepto: { type: String, default: "" },
-        precioVenta: { type: Number, default: 0 },
+        cant:          { type: Number, default: 0 },
+        concepto:      { type: String, default: "" },
+        precioVenta:   { type: Number, default: 0 },
         observaciones: { type: String, default: "" },
       },
     ],
 
+    // ── Mano de Obra ──────────────────────────────────────────────────────────
+    manoObra: [
+      {
+        concepto:      { type: String, default: "" },
+        mecanico:      { type: String, default: "" },
+        horas:         { type: Number, default: 0 },
+        fechaPago:     { type: String, default: "" },
+        observaciones: { type: String, default: "" },
+      },
+    ],
 
-
-    // ===== Mano de Obra =====
-manoObra: [
-  {
-    concepto: { type: String, default: "" },
-    mecanico: { type: String, default: "" },
-    horas: { type: Number, default: 0 },
-    fechaPago: { type: String, default: "" }, // o Date si quieres
-    observaciones: { type: String, default: "" },
+    // ── Observaciones finales ─────────────────────────────────────────────────
+    observacionesExternas: { type: String, default: "" },
+    observacionesInternas: { type: String, default: "" },
   },
-],
-
-// ===== Observaciones finales =====
-observacionesExternas: { type: String, default: "" },
-observacionesInternas: { type: String, default: "" },
-
-
-
-  },
-  {
-    timestamps: true, // createdAt, updatedAt
-  }
+  { timestamps: true }
 );
-
 
 // Generar número de Orden de Servicio automáticamente si no viene
 vehiculoSchema.pre('save', function (next) {
@@ -259,12 +290,9 @@ vehiculoSchema.pre('save', function (next) {
     const hh = String(ahora.getHours()).padStart(2, '0');
     const mi = String(ahora.getMinutes()).padStart(2, '0');
     const ss = String(ahora.getSeconds()).padStart(2, '0');
-
-    // Ejemplo: OS-20251210-143015
     this.ordenServicio = `OS-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
   }
   next();
 });
-
 
 module.exports = mongoose.model('Vehiculo', vehiculoSchema);
