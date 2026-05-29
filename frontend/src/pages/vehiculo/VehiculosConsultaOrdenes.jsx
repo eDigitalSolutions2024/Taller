@@ -3,12 +3,13 @@ import { listOrdenesServicio } from "../../api/vehiculos";
 import { useNavigate } from "react-router-dom";
 
 const TABS = [
-  { key: "PENDIENTE_CAPTURA",       label: "PENDIENTE CAPTURA" },
-  { key: "PENDIENTE_REFACCIONARIA", label: "PENDIENTE REFACCIONARIA" },
-  { key: "PENDIENTE_AUTORIZACION",  label: "PENDIENTE AUTORIZACION CLIENTE" },
-  { key: "REPARACION_EN_CURSO",     label: "REPARACIÓN EN CURSO" },
-  { key: "CALIDAD",                 label: "CALIDAD" },
-  { key: "PENDIENTE_CERRAR",        label: "PENDIENTE DE CERRAR" },
+  { key: "PENDIENTE_CAPTURA",            label: "PENDIENTE CAPTURA" },
+  { key: "PENDIENTE_REFACCIONARIA",      label: "PENDIENTE REFACCIONARIA" },
+  { key: "PENDIENTE_AUTORIZACION",       label: "PENDIENTE AUTORIZACION" },
+  { key: "PENDIENTE_AUTORIZACION_CLIENTE", label: "PENDIENTE AUTORIZACION CLIENTE" },
+  { key: "REPARACION_EN_CURSO",          label: "REPARACIÓN EN CURSO" },
+  { key: "CALIDAD",                      label: "CALIDAD" },
+  { key: "PENDIENTE_CERRAR",             label: "PENDIENTE DE CERRAR" },
 ];
 
 export default function VehiculosConsultaOrdenes() {
@@ -39,6 +40,7 @@ export default function VehiculosConsultaOrdenes() {
     "PENDIENTE_REFACCIONARIA",
     "PENDIENTE_AUTORIZACION",
     "REPARACION_EN_CURSO",
+    "PENDIENTE_AUTORIZACION_CLIENTE",
     "CALIDAD",
     "PENDIENTE_CERRAR",
     "CERRADA",

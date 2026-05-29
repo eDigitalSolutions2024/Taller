@@ -10,10 +10,8 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     const page = await browser.newPage();
 
     const fechaActual = dayjs().format('DD/MM/YYYY');
-
     const fmt = n => Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
-    // Refacciones autorizadas
     const itemsRef = (orden.presupuesto || [])
       .filter(r => r.estatus === 'AUTORIZADO')
       .map(r => ({
@@ -23,7 +21,6 @@ exports.generarPresupuestoPDF = async (res, orden) => {
         subtotal: Number(r.cant || 0) * Number(r.precioVenta || 0)
       }));
 
-    // Mano de obra
     const itemsMO = (orden.manoObra || []).map(m => ({
       cant:     1,
       desc:     m.concepto,
@@ -46,13 +43,11 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     const MIN_ROWS = 14;
     const maxRows  = Math.max(MIN_ROWS, itemsRef.length, itemsMO.length);
 
-    const emptyRow = `
-      <tr>
-        <td class="tc">&nbsp;</td>
-        <td></td>
-        <td class="tr money">$&nbsp;-</td>
-        <td class="tr money">$&nbsp;-</td>
-      </tr>`;
+    const emptyRow = `<tr>
+      <td class="tc">&nbsp;</td><td></td>
+      <td class="tr" style="color:#bbb">$ -</td>
+      <td class="tr" style="color:#bbb">$ -</td>
+    </tr>`;
 
     const refRows = Array.from({ length: maxRows }, (_, i) => {
       const r = itemsRef[i];
@@ -60,8 +55,8 @@ exports.generarPresupuestoPDF = async (res, orden) => {
       return `<tr>
         <td class="tc">${r.cant}</td>
         <td class="tl">${r.desc}</td>
-        <td class="tr money">$${fmt(r.precio)}</td>
-        <td class="tr money">$${fmt(r.subtotal)}</td>
+        <td class="tr">$${fmt(r.precio)}</td>
+        <td class="tr">$${fmt(r.subtotal)}</td>
       </tr>`;
     }).join('');
 
@@ -71,8 +66,8 @@ exports.generarPresupuestoPDF = async (res, orden) => {
       return `<tr>
         <td class="tc">${m.cant}</td>
         <td class="tl">${m.desc}</td>
-        <td class="tr money">$${fmt(m.precio)}</td>
-        <td class="tr money">$${fmt(m.subtotal)}</td>
+        <td class="tr">$${fmt(m.precio)}</td>
+        <td class="tr">$${fmt(m.subtotal)}</td>
       </tr>`;
     }).join('');
 
@@ -81,204 +76,285 @@ exports.generarPresupuestoPDF = async (res, orden) => {
 <head>
 <meta charset="UTF-8">
 <style>
-  @page { size: Letter; margin: 8mm; }
+  @page { size: Letter landscape; margin: 8mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 8.5px; color: #111; }
+  body { font-family: Arial, sans-serif; font-size: 8.5px; color: #000; }
 
-  /* ── HEADER ── */
-  .header { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
+  /* ══ UTILIDADES ══ */
+  .tc  { text-align: center; }
+  .tl  { text-align: left; }
+  .tr  { text-align: right; }
+  .b   { font-weight: bold; }
+  .lbl { background: #e8e8e8; font-weight: bold; }
+
+  /* ══ BORDES ══ */
+  .brd { border: 0.8px solid #000; }
+
+  /* ══ HEADER PRINCIPAL ══ */
+  .hdr-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 3px;
+    border: 0.8px solid #000;
+  }
+  .hdr-tbl td { border: 0.8px solid #000; padding: 0; vertical-align: top; }
+
+  /* Celda izquierda: logo + datos negocio */
+  .hdr-left {
+    width: 28%;
+    padding: 4px 6px;
+    vertical-align: middle;
+  }
   .logo-box {
-    width: 26mm; height: 20mm; border: 1px solid #999;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 9px; color: #666; flex-shrink: 0;
+    width: 22mm; height: 16mm;
+    border: 1px solid #999;
+    display: inline-block;
+    text-align: center;
+    line-height: 16mm;
+    font-size: 9px; color: #666;
+    vertical-align: middle;
+    margin-bottom: 3px;
   }
-  .company-info { flex: 1; font-size: 7.5px; line-height: 1.5; }
-  .company-name { font-size: 10px; font-weight: bold; text-transform: uppercase; }
-  .doc-title {
-    flex: 2; text-align: center; font-size: 13px;
-    font-weight: bold; text-transform: uppercase; padding-top: 4px;
+  .biz-name { font-size: 9.5px; font-weight: bold; text-transform: uppercase; }
+  .biz-info  { font-size: 7.5px; line-height: 1.5; }
+
+  /* Celda derecha: tabla interior de 3 filas */
+  .hdr-right { width: 72%; vertical-align: top; }
+
+  .hdr-inner { width: 100%; border-collapse: collapse; height: 100%; }
+  .hdr-inner td { border: 0.8px solid #000; padding: 3px 5px; vertical-align: middle; }
+
+  /* Fila 1 — título */
+  .hdr-title {
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 5px !important;
   }
 
-  /* ── CLIENTE / VEHÍCULO ── */
-  .cv-wrap { display: flex; gap: 4px; margin-bottom: 4px; }
-  .client-block { flex: 1; }
-  .vehicle-block { width: 60mm; flex-shrink: 0; }
-  .cv-table { width: 100%; border-collapse: collapse; }
-  .cv-table td { border: 0.8px solid #000; padding: 2px 4px; font-size: 8px; }
-  .lbl { background: #e0e0e0; font-weight: bold; white-space: nowrap; width: 28%; }
-  .lbl-dark { background: #555; color: #fff; font-weight: bold; text-align: center; font-size: 9px; }
-  .folio-val { font-weight: bold; font-size: 10px; }
+  /* Fila 2 — nombre cliente */
+  .hdr-client-lbl {
+    background: #000; color: #fff;
+    font-weight: bold; font-size: 9px;
+    text-align: center; width: 22%;
+  }
+  .hdr-client-val {
+    font-weight: bold; font-size: 11px;
+    text-align: center;
+  }
 
-  /* ── DOS COLUMNAS ── */
-  .cols { display: flex; gap: 3px; }
-  .col { flex: 1; }
-  .divider-bar { width: 3px; background: #000; flex-shrink: 0; }
+  /* Fila 3 — cotización + marca */
+  .hdr-tag  { background: #e8e8e8; font-weight: bold; text-align: right; width: 13%; font-size: 8px; }
+  .hdr-val  { text-align: left; width: 13%; font-size: 8px; }
+  .hdr-gap  { width: 10%; }
+  .hdr-vtag { background: #e8e8e8; font-weight: bold; text-align: right; width: 13%; font-size: 8px; }
+  .hdr-vval { text-align: left; width: 13%; font-size: 8px; }
 
-  /* ── TABLAS DE ITEMS ── */
-  .items-table { width: 100%; border-collapse: collapse; }
-  .items-table th, .items-table td {
+  /* Filas adicionales vehículo (dentro de hdr-right) */
+  .v-lbl { background: #e8e8e8; font-weight: bold; text-align: right; font-size: 8px; padding: 2px 4px; width: 30%; }
+  .v-val  { font-size: 8px; padding: 2px 4px; }
+
+  /* ══ LAYOUT DOS COLUMNAS ══ */
+  .layout-tbl { width: 100%; border-collapse: collapse; }
+  .layout-tbl > tbody > tr > td { vertical-align: top; padding: 0; border: none; }
+  .col-ref { width: 49.5%; }
+  .col-div { width: 1%;  background: #000; }
+  .col-mo  { width: 49.5%; }
+
+  /* ══ TABLAS DE ITEMS ══ */
+  .items-tbl { width: 100%; border-collapse: collapse; }
+  .items-tbl th, .items-tbl td {
     border: 0.8px solid #000; padding: 2px 3px; vertical-align: middle;
   }
   .sec-hdr {
-    background: #555; color: #fff; text-align: center;
-    font-weight: bold; font-size: 9px; text-transform: uppercase;
-    letter-spacing: 1px;
+    background: #000; color: #fff;
+    text-align: center; font-weight: bold;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
   }
-  .col-hdr { background: #ccc; font-weight: bold; text-align: center; font-size: 7.5px; }
-  .tc { text-align: center; }
-  .tl { text-align: left; }
-  .tr { text-align: right; }
-  .money { font-variant-numeric: tabular-nums; }
+  .col-hdr { background: #e8e8e8; font-weight: bold; text-align: center; font-size: 7.5px; }
 
-  /* ── SUBTOTALES ── */
-  .sub-lbl {
-    background: #e0e0e0; font-weight: bold;
-    text-align: right; border: 0.8px solid #000;
-    padding: 2px 4px; font-size: 8px;
-  }
-  .sub-val {
-    background: #f5f5f5; text-align: right;
-    border: 0.8px solid #000; padding: 2px 4px; font-size: 8px;
-  }
-  .tot-lbl {
-    background: #555; color: #fff; font-weight: bold;
-    text-align: right; border: 0.8px solid #000; padding: 2px 4px; font-size: 8px;
-  }
-  .tot-val {
-    background: #555; color: #fff; font-weight: bold;
-    text-align: right; border: 0.8px solid #000; padding: 2px 4px; font-size: 8px;
-  }
-  .sub-row { display: flex; }
-  .sub-row .sub-lbl { flex: 3; }
-  .sub-row .sub-val { flex: 1; min-width: 22mm; }
-  .sub-row .tot-lbl { flex: 3; }
-  .sub-row .tot-val { flex: 1; min-width: 22mm; }
+  /* ══ SUBTOTALES ══ */
+  .sub-tbl { width: 100%; border-collapse: collapse; }
+  .sub-tbl td { border: 0.8px solid #000; padding: 2px 4px; font-size: 8px; }
+  .sub-lbl { background: #e8e8e8; font-weight: bold; text-align: right; width: 70%; }
+  .sub-val { text-align: right; }
+  .tot-lbl { background: #000; color: #fff; font-weight: bold; text-align: right; }
+  .tot-val { background: #000; color: #fff; font-weight: bold; text-align: right; }
 
-  /* ── TOTAL GENERAL ── */
-  .grand-wrap { display: flex; justify-content: flex-end; margin-top: 3px; }
-  .grand-table { border-collapse: collapse; width: 58mm; }
-  .grand-table td { border: 0.8px solid #000; padding: 2px 5px; font-size: 8.5px; }
-  .g-lbl { background: #e0e0e0; font-weight: bold; text-align: right; }
+  /* ══ TOTAL GENERAL ══ */
+  .grand-tbl { border-collapse: collapse; float: right; width: 62mm; margin-top: 3px; }
+  .grand-tbl td { border: 0.8px solid #000; padding: 2px 5px; font-size: 8.5px; }
+  .g-lbl { background: #e8e8e8; font-weight: bold; text-align: right; width: 65%; }
   .g-val { text-align: right; }
-  .g-tot td { background: #222; color: #fff; font-weight: bold; font-size: 10px; text-align: right; }
+  .g-tot-lbl { background: #000; color: #fff; font-weight: bold; text-align: right; font-size: 10px; }
+  .g-tot-val { background: #000; color: #fff; font-weight: bold; text-align: right; font-size: 10px; }
 
-  /* ── FOOTER ── */
-  .footer { margin-top: 5px; font-size: 7px; color: #333; line-height: 1.6; }
+  /* ══ FOOTER ══ */
+  .clearfix::after { content: ''; display: table; clear: both; }
+  .footer { margin-top: 5px; font-size: 7px; color: #333; line-height: 1.6; clear: both; }
   .guarantee { text-align: center; font-weight: bold; font-size: 8px; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="header">
-  <div class="logo-box">LOGO</div>
-  <div class="company-info">
-    <div class="company-name">Autoservicio D y G</div>
-    <div>Servicios Profesionales de Inyección</div>
-    <div>Av. Valentín Fuentes Varela #1779, Col. La Fuente</div>
-    <div>Juárez, Chih. &nbsp;|&nbsp; Tel. (656) *********</div>
-  </div>
-  <div class="doc-title">Cotización de Orden de Trabajo</div>
-</div>
+<!-- ══════════════════════════════════════════
+     HEADER
+     Columna izquierda : logo + datos negocio
+     Columna derecha   : 3 filas (título / cliente / cotiz+marca)
+                         + filas adicionales de vehículo
+════════════════════════════════════════════ -->
+<table class="hdr-tbl">
+  <tbody>
+    <tr>
+      <!-- IZQUIERDA -->
+      <td class="hdr-left" rowspan="2">
+        <div class="logo-box">LOGO</div>
+        <div class="biz-name">Autoservicio D y G</div>
+        <div class="biz-info">
+          Servicios Profesionales de Inyección<br>
+          Av. Valentín Fuentes Varela #1779<br>
+          Col. La Fuente, Juárez, Chih.<br>
+          Tel. (656) *********
+        </div>
+      </td>
 
-<!-- CLIENTE + VEHÍCULO -->
-<div class="cv-wrap">
-  <div class="client-block">
-    <table class="cv-table">
-      <tr>
-        <td class="lbl-dark" colspan="2">NOMBRE DEL CLIENTE</td>
-        <td colspan="2" style="font-weight:bold; font-size:9px;">${orden.nombreCliente || 'CLIENTE GENERAL'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">COTIZACIÓN</td>
-        <td class="folio-val">L-${orden._id.toString().slice(-4).toUpperCase()}</td>
-        <td class="lbl">FECHA</td>
-        <td>${fechaActual}</td>
-      </tr>
-      <tr>
-        <td class="lbl">RFC</td>
-        <td>${orden.rfc || 'N/A'}</td>
-        <td class="lbl">TELÉFONO</td>
-        <td>${orden.telefono || 'N/A'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">CORREO</td>
-        <td colspan="3">${orden.correo || 'N/A'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">DIRECCIÓN</td>
-        <td colspan="3">${orden.direccion || 'N/A'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">ASESOR</td>
-        <td colspan="3">admin</td>
-      </tr>
-    </table>
-  </div>
-  <div class="vehicle-block">
-    <table class="cv-table">
-      <tr><td class="lbl">MARCA</td>   <td>${orden.marca || ''}</td></tr>
-      <tr><td class="lbl">LÍNEA</td>   <td>${orden.modelo || ''}</td></tr>
-      <tr><td class="lbl">AÑO</td>     <td>${orden.anio || ''}</td></tr>
-      <tr><td class="lbl">COLOR</td>   <td>${orden.color || ''}</td></tr>
-      <tr><td class="lbl">PLACAS</td>  <td>${orden.placas || ''}</td></tr>
-      <tr><td class="lbl">SERIE</td>   <td>${orden.serie || ''}</td></tr>
-      <tr><td class="lbl">ODÓMETRO</td><td>${orden.kilometraje || ''}</td></tr>
-    </table>
-  </div>
-</div>
+      <!-- DERECHA — tabla interior -->
+      <td class="hdr-right">
+        <table class="hdr-inner">
 
-<!-- DOS COLUMNAS -->
-<div class="cols">
+          <!-- Fila 1: Título -->
+          <tr>
+            <td class="hdr-title" colspan="5">COTIZACIÓN DE ORDEN DE TRABAJO</td>
+          </tr>
 
-  <!-- REFACCIONES -->
-  <div class="col">
-    <table class="items-table">
-      <thead>
-        <tr><th class="sec-hdr" colspan="4">Refacciones</th></tr>
-        <tr>
-          <th class="col-hdr" style="width:8%">Cant.</th>
-          <th class="col-hdr">Descripción</th>
-          <th class="col-hdr" style="width:18%">Precio</th>
-          <th class="col-hdr" style="width:18%">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>${refRows}</tbody>
-    </table>
-    <div class="sub-row"><div class="sub-lbl">SUBTOTAL</div><div class="sub-val">$${fmt(subtotalRef)}</div></div>
-    <div class="sub-row"><div class="sub-lbl">I.V.A. (8%)</div><div class="sub-val">$${fmt(ivaRef)}</div></div>
-    <div class="sub-row"><div class="tot-lbl">TOTAL REFACCIONES</div><div class="tot-val">$${fmt(totalRef)}</div></div>
-  </div>
+          <!-- Fila 2: Nombre del cliente -->
+          <tr>
+            <td class="hdr-client-lbl" colspan="2">NOMBRE DEL CLIENTE</td>
+            <td class="hdr-client-val" colspan="3">${orden.nombreCliente || 'CLIENTE GENERAL'}</td>
+          </tr>
 
-  <div class="divider-bar"></div>
+          <!-- Fila 3: Cotización | Número | Espacio | MARCA | valor -->
+          <tr>
+            <td class="hdr-tag">COTIZACIÓN</td>
+            <td class="hdr-val b">L-${orden._id.toString().slice(-4).toUpperCase()}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">MARCA</td>
+            <td class="hdr-vval">${orden.marca || ''}</td>
+          </tr>
 
-  <!-- MANO DE OBRA -->
-  <div class="col">
-    <table class="items-table">
-      <thead>
-        <tr><th class="sec-hdr" colspan="4">Mano de Obra</th></tr>
-        <tr>
-          <th class="col-hdr" style="width:8%">Cant.</th>
-          <th class="col-hdr">Descripción</th>
-          <th class="col-hdr" style="width:18%">Precio</th>
-          <th class="col-hdr" style="width:18%">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>${moRows}</tbody>
-    </table>
-    <div class="sub-row"><div class="sub-lbl">SUBTOTAL</div><div class="sub-val">$${fmt(subtotalMO)}</div></div>
-    <div class="sub-row"><div class="sub-lbl">I.V.A. (8%)</div><div class="sub-val">$${fmt(ivaMO)}</div></div>
-    <div class="sub-row"><div class="tot-lbl">TOTAL MANO DE OBRA</div><div class="tot-val">$${fmt(totalMO)}</div></div>
-  </div>
+          <!-- Filas extra: resto de datos cotización + vehículo -->
+          <tr>
+            <td class="hdr-tag">FECHA</td>
+            <td class="hdr-val">${fechaActual}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">LÍNEA</td>
+            <td class="hdr-vval">${orden.modelo || ''}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">RFC</td>
+            <td class="hdr-val">${orden.rfc || 'N/A'}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">AÑO</td>
+            <td class="hdr-vval">${orden.anio || ''}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">TELÉFONO</td>
+            <td class="hdr-val">${orden.telefono || 'N/A'}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">COLOR</td>
+            <td class="hdr-vval">${orden.color || ''}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">ASESOR</td>
+            <td class="hdr-val">admin</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">PLACAS</td>
+            <td class="hdr-vval">${orden.placas || ''}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">CORREO</td>
+            <td class="hdr-val">${orden.correo || 'N/A'}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">SERIE</td>
+            <td class="hdr-vval">${orden.serie || ''}</td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding:2px 4px; font-size:8px;">${orden.direccion || ''}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">ODÓMETRO</td>
+            <td class="hdr-vval">${orden.kilometraje || ''}</td>
+          </tr>
 
-</div>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ══════════════════════════════════════════
+     DOS COLUMNAS: REFACCIONES | MANO DE OBRA
+════════════════════════════════════════════ -->
+<table class="layout-tbl">
+  <tbody>
+    <tr>
+
+      <!-- REFACCIONES -->
+      <td class="col-ref">
+        <table class="items-tbl">
+          <thead>
+            <tr><th class="sec-hdr" colspan="4">Refacciones</th></tr>
+            <tr>
+              <th class="col-hdr" style="width:8%">Cant.</th>
+              <th class="col-hdr">Descripción</th>
+              <th class="col-hdr" style="width:19%">Precio</th>
+              <th class="col-hdr" style="width:19%">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${refRows}</tbody>
+        </table>
+        <table class="sub-tbl">
+          <tr><td class="sub-lbl">SUBTOTAL</td>          <td class="sub-val">$${fmt(subtotalRef)}</td></tr>
+          <tr><td class="sub-lbl">I.V.A. (8%)</td>       <td class="sub-val">$${fmt(ivaRef)}</td></tr>
+          <tr><td class="tot-lbl">TOTAL REFACCIONES</td> <td class="tot-val">$${fmt(totalRef)}</td></tr>
+        </table>
+      </td>
+
+      <!-- DIVISOR -->
+      <td class="col-div">&nbsp;</td>
+
+      <!-- MANO DE OBRA -->
+      <td class="col-mo">
+        <table class="items-tbl">
+          <thead>
+            <tr><th class="sec-hdr" colspan="4">Mano de Obra</th></tr>
+            <tr>
+              <th class="col-hdr" style="width:8%">Cant.</th>
+              <th class="col-hdr">Descripción</th>
+              <th class="col-hdr" style="width:19%">Precio</th>
+              <th class="col-hdr" style="width:19%">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${moRows}</tbody>
+        </table>
+        <table class="sub-tbl">
+          <tr><td class="sub-lbl">SUBTOTAL</td>          <td class="sub-val">$${fmt(subtotalMO)}</td></tr>
+          <tr><td class="sub-lbl">I.V.A. (8%)</td>       <td class="sub-val">$${fmt(ivaMO)}</td></tr>
+          <tr><td class="tot-lbl">TOTAL MANO DE OBRA</td><td class="tot-val">$${fmt(totalMO)}</td></tr>
+        </table>
+      </td>
+
+    </tr>
+  </tbody>
+</table>
 
 <!-- TOTAL GENERAL -->
-<div class="grand-wrap">
-  <table class="grand-table">
+<div class="clearfix">
+  <table class="grand-tbl">
     <tr><td class="g-lbl">SUBTOTAL GENERAL</td><td class="g-val">$${fmt(subtotalG)}</td></tr>
-    <tr><td class="g-lbl">I.V.A. (8%)</td><td class="g-val">$${fmt(ivaG)}</td></tr>
-    <tr class="g-tot"><td>TOTAL</td><td>$${fmt(totalG)}</td></tr>
+    <tr><td class="g-lbl">I.V.A. (8%)</td>     <td class="g-val">$${fmt(ivaG)}</td></tr>
+    <tr><td class="g-tot-lbl">TOTAL</td>        <td class="g-tot-val">$${fmt(totalG)}</td></tr>
   </table>
 </div>
 
@@ -295,7 +371,8 @@ exports.generarPresupuestoPDF = async (res, orden) => {
 
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     const pdfBuffer = await page.pdf({ 
-      format: 'Letter', 
+      format: 'Letter',
+      landscape: true,
       printBackground: true,
       margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' }
     });
@@ -305,7 +382,7 @@ exports.generarPresupuestoPDF = async (res, orden) => {
     res.send(pdfBuffer);
 
   } catch (error) {
-    console.error('Error al generar PDF:', error);
-    res.status(500).send('Error al generar PDF');
+    console.error('Error al generar PDF:', error.message, error.stack);
+    res.status(500).send('Error al generar PDF: ' + error.message);
   }
 };

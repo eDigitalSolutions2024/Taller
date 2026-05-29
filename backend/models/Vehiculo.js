@@ -6,6 +6,7 @@ const ESTADOS_ORDEN = [
   'PENDIENTE_CAPTURA',
   'PENDIENTE_REFACCIONARIA',
   'PENDIENTE_AUTORIZACION',
+  'PENDIENTE_AUTORIZACION_CLIENTE',
   'REPARACION_EN_CURSO',
   'CALIDAD',
   'PENDIENTE_CERRAR',
@@ -191,6 +192,23 @@ const vehiculoSchema = new Schema(
         ocGenerada:  { type: Boolean, default: false },
         numeroOC:    { type: String,  default: null  },
         ordenCompra: { type: Schema.Types.ObjectId, ref: 'OrdenCompra', default: null },
+
+        // ── AGREGAR ESTAS DOS LÍNEAS ──────────────────────────────
+        opciones:           { type: Array, default: [] },
+        opcionSeleccionada: { type: Number, default: null },
+        // ─────────────────────────────────────────────────────────
+
+        estatus: {
+          type: String,
+          enum: ['PENDIENTE', 'APROBADA', 'RECHAZADA'],
+          default: 'PENDIENTE',
+        },
+        requiereOC: { type: Boolean, default: false },
+        ocGenerada:  { type: Boolean, default: false },
+        numeroOC:    { type: String,  default: null  },
+        ordenCompra: { type: Schema.Types.ObjectId, ref: 'OrdenCompra', default: null },
+
+
       },
     ],
 

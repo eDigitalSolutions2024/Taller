@@ -216,7 +216,7 @@ export default function ServicioReparacionTab({
 
             {/* ✅ Fallas reportadas por el cliente */}
             <div className="mb-3">
-              <label className="form-label fw-semibold">Fallas reportadas por el cliente</label>
+              <label className="form-label fw-semibold">FALLAS REPORTADAS POR EL CLIENTE</label>
               <textarea
                 className="form-control"
                 rows={4}
@@ -229,24 +229,26 @@ export default function ServicioReparacionTab({
             </div>
 
             <div className="mb-3">
-              <label className="form-label fw-semibold">Información de Llantas</label>
+              <label className="form-label fw-semibold">INFORMACIÓN DE LLANTAS</label>
               <textarea
                 className="form-control"
                 rows={3}
                 name="infoLlantas"
                 value={form.infoLlantas}
+                placeholder="Estado de las llantas, medidas, observaciones..."
                 onChange={handleChangeText}
                 disabled={yaCerrada}
               />
             </div>
 
             <div className="mb-3">
-              <label className="form-label fw-semibold">Revisión fallas reportadas por el cliente</label>
+              <label className="form-label fw-semibold">OBSERVACIONES GENERALES</label>
               <textarea
                 className="form-control"
                 rows={3}
                 name="revisionFallas"
                 value={form.revisionFallas}
+                placeholder="Observaciones adicionales sobre el servicio o reparación..."
                 onChange={handleChangeText}
                 disabled={yaCerrada}
               />

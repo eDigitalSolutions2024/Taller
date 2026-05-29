@@ -105,8 +105,20 @@ router.get('/ordenes', async (req, res) => {
     } = req.query;
 
     const q = {};
-
-    if (estado) {
+    if (estado === 'PENDIENTE_REFACCIONARIA') {
+      // Incluye órdenes en estado PENDIENTE_REFACCIONARIA
+      // Y también órdenes en cualquier estado activo que tengan
+      // refacciones sin cotizar (opciones vacías)
+      q.$or = [
+        { estadoOrden: 'PENDIENTE_REFACCIONARIA' },
+        {
+          estadoOrden: { $nin: ['CERRADA', 'PENDIENTE_CAPTURA'] },
+          'refaccionesSolicitadas': {
+            $elemMatch: { opciones: { $size: 0 } }
+          }
+        }
+      ];
+    } else if (estado) {
       q.estadoOrden = estado;
     }
 
