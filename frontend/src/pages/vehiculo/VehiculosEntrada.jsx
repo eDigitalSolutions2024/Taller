@@ -123,6 +123,9 @@ function ModalNuevoCliente({ onClose, onClienteCreado }) {
 
   const handleGuardar = async (e) => {
     e.preventDefault();
+
+    console.log("Payload:", form);
+
     if (!form.nombre.trim()) { setMsg("❌ El nombre del cliente es obligatorio."); return; }
 
     setSaving(true);
