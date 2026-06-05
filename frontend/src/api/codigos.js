@@ -16,3 +16,12 @@ export async function fetchServiciosTaller() {
 
   return data.data || [];
 }
+
+
+export async function buscarCodigos(q = "", tipo = "refaccion") {
+  const { data } = await http.get("/codigos", {
+    params: { q, tipo, limit: 50 },
+  });
+  if (!data.success) throw new Error(data.message || "Error");
+  return data.data || [];
+}
