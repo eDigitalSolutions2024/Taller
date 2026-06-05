@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 
 const UNIDADES = ['PZA', 'PAR', 'JGO', 'LT', 'ML', 'KG', 'GR', 'MT', 'CM', 'OTRO'];
 const ESTATUSES = [
@@ -12,6 +12,14 @@ const VACIO = {
   marca: '', unidadMedida: 'PZA',
   cantidad: '', cantidadMinima: '', cantidadMaxima: '',
   precioUnitario: '', estatus: 'disponible', notas: '',
+};
+
+const calcularEstatus = (cantidad, cantidadMinima) => {
+  const cant = Number(cantidad);
+  const min  = Number(cantidadMinima) || 0;
+  if (cant === 0) return 'agotado';
+  if (min > 0 && cant <= min) return 'bajo_inventario';
+  return 'disponible';
 };
 
 const construirCodigo = (nombrePieza, numeroPieza, marca, proveedor) => {
@@ -117,9 +125,6 @@ const EstatusSelector = memo(({ value, onChange, cantidad, cantidadMinima }) => 
           );
         })}
       </div>
-      <span style={ls.hint}>
-        Se calcula automáticamente. Haz clic en "Descontinuado" para marcarlo/desmarcarlo.
-      </span>
     </div>
   );
 });
@@ -142,7 +147,6 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
     const { name, value } = e.target;
     setForm(prev => {
       const next = { ...prev, [name]: value };
-      // Recalcular estatus automáticamente (salvo descontinuado)
       if ((name === 'cantidad' || name === 'cantidadMinima') && prev.estatus !== 'descontinuado') {
         const cant = name === 'cantidad'       ? value : prev.cantidad;
         const min  = name === 'cantidadMinima' ? value : prev.cantidadMinima;
@@ -172,12 +176,11 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
 
   const validar = () => {
     const e = {};
-    if (!form.codigo.trim())      e.codigo         = 'El código es requerido';
-    if (!form.nombrePieza.trim()) e.nombrePieza    = 'El nombre es requerido';
-    if (!form.proveedor.trim())   e.proveedor      = 'El proveedor es requerido';
+    if (!form.codigo.trim())      e.codigo      = 'El código es requerido';
+    if (!form.nombrePieza.trim()) e.nombrePieza = 'El nombre es requerido';
+    if (!form.proveedor.trim())   e.proveedor   = 'El proveedor es requerido';
     if (form.cantidad === '' || Number(form.cantidad) < 0) e.cantidad = 'Cantidad válida requerida';
     if (form.precioUnitario === '' || Number(form.precioUnitario) < 0) e.precioUnitario = 'Precio válido requerido';
-    // Validar que mínimo no sea mayor que máximo
     const min = Number(form.cantidadMinima);
     const max = Number(form.cantidadMaxima);
     if (form.cantidadMinima !== '' && form.cantidadMaxima !== '' && max > 0 && min > max) {
@@ -194,10 +197,10 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
     try {
       await onGuardar({
         ...form,
-        cantidad:        Number(form.cantidad),
-        cantidadMinima:  form.cantidadMinima !== '' ? Number(form.cantidadMinima) : 0,
-        cantidadMaxima:  form.cantidadMaxima !== '' ? Number(form.cantidadMaxima) : 0,
-        precioUnitario:  Number(form.precioUnitario),
+        cantidad:       Number(form.cantidad),
+        cantidadMinima: form.cantidadMinima !== '' ? Number(form.cantidadMinima) : 0,
+        cantidadMaxima: form.cantidadMaxima !== '' ? Number(form.cantidadMaxima) : 0,
+        precioUnitario: Number(form.precioUnitario),
       });
       onCerrar();
     } catch (err) {
@@ -207,16 +210,25 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
     }
   };
 
+  // ── useMemo ANTES del return ──────────────────────────────────────────────
+  const alertaInventario = useMemo(() => (
+    <AlertaInventario
+      cantidad={form.cantidad}
+      cantidadMinima={form.cantidadMinima}
+      cantidadMaxima={form.cantidadMaxima}
+    />
+  ), [form.cantidad, form.cantidadMinima, form.cantidadMaxima]);
+
   if (!abierto) return null;
 
   return (
-    <div style={ls.overlay} >
+    <div style={ls.overlay}>
       <div style={ls.modal}>
 
         <div style={ls.header}>
           <div>
-            <h2 style={ls.titulo}>{esEdicion ? '✏️ Editar Pieza' : '➕ Nueva Pieza'}</h2>
-            <p style={ls.subtitulo}>{esEdicion ? `Editando: ${piezaEditar.codigo}` : 'Catálogo de piezas — Prueba'}</p>
+            <h2 style={ls.titulo}>{esEdicion ? 'Editar Pieza' : 'Nueva Pieza'}</h2>
+            <p style={ls.subtitulo}>{esEdicion ? `Editando: ${piezaEditar.codigo}` : 'Catálogo de piezas'}</p>
           </div>
           <button style={ls.btnX} onClick={onCerrar}>✕</button>
         </div>
@@ -230,13 +242,17 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
           <div style={{ marginBottom: 12 }}>
             <label style={ls.label}>Código <span style={{ color: '#ef4444' }}>*</span></label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input ref={inputCodigoRef} name="codigo" value={form.codigo} onChange={handleChange}
+              <input
+                ref={inputCodigoRef}
+                name="codigo"
+                value={form.codigo}
+                onChange={handleChange}
                 placeholder="Escribe o usa ⚡ Generar"
-                style={{ ...ls.input, flex: 1, fontFamily: 'monospace', fontSize: 14, ...(errores.codigo ? { borderColor: '#ef4444', background: '#fef2f2' } : {}) }} />
+                style={{ ...ls.input, flex: 1, fontFamily: 'monospace', fontSize: 14, ...(errores.codigo ? { borderColor: '#ef4444', background: '#fef2f2' } : {}) }}
+              />
               <button type="button" style={ls.btnGenerar} onClick={handleGenerarCodigo}>⚡ Generar</button>
             </div>
             {errores.codigo && <span style={ls.errMsg}>{errores.codigo}</span>}
-            <span style={ls.hint}>Escribe manualmente o presiona ⚡ Generar (Nombre + N° Pieza + Marca/Proveedor).</span>
           </div>
 
           <div style={ls.g2}>
@@ -252,13 +268,11 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
 
           <Seccion titulo="Inventario & Precio" />
 
-          {/* Fila 1: UM + Precio */}
           <div style={ls.g2}>
             <SelectCampo label="Unidad de Medida" name="unidadMedida" value={form.unidadMedida} onChange={handleChange} options={UNIDADES} />
             <Campo label="Precio Unitario ($)" name="precioUnitario" value={form.precioUnitario} onChange={handleChange} error={errores.precioUnitario} req type="number" min="0" step="0.01" placeholder="0.00" />
           </div>
 
-          {/* Fila 2: Cant actual + Mínimo + Máximo */}
           <div style={ls.g3}>
             <Campo label="Cantidad Actual" name="cantidad" value={form.cantidad} onChange={handleChange} error={errores.cantidad} req type="number" min="0" placeholder="0" />
             <Campo
@@ -280,12 +294,8 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
             />
           </div>
 
-          {/* Alerta visual en tiempo real */}
-          <AlertaInventario
-            cantidad={form.cantidad}
-            cantidadMinima={form.cantidadMinima}
-            cantidadMaxima={form.cantidadMaxima}
-          />
+          {/* Alerta visual — ya memoizada arriba */}
+          {alertaInventario}
 
           <div style={{ marginTop: 12 }}>
             <EstatusSelector
@@ -302,7 +312,7 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
           <div style={ls.footer}>
             <button type="button" style={ls.btnCancel} onClick={onCerrar}>Cancelar</button>
             <button type="submit" style={ls.btnSave} disabled={guardando}>
-              {guardando ? 'Guardando...' : esEdicion ? '💾 Actualizar' : '✅ Crear Pieza'}
+              {guardando ? 'Guardando...' : esEdicion ? 'Actualizar' : 'Crear Pieza'}
             </button>
           </div>
         </form>
@@ -316,14 +326,6 @@ const Seccion = ({ titulo }) => (
     <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 1, textTransform: 'uppercase' }}>{titulo}</span>
   </div>
 );
-
-const calcularEstatus = (cantidad, cantidadMinima) => {
-  const cant = Number(cantidad);
-  const min  = Number(cantidadMinima) || 0;
-  if (cant === 0) return 'agotado';
-  if (min > 0 && cant <= min) return 'bajo_inventario';
-  return 'disponible';
-};
 
 const ls = {
   overlay:    { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' },

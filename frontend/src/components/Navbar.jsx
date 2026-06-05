@@ -366,18 +366,18 @@ useEffect(() => {
               <span className="label" style={{display:'block'}}>Consultar Factura</span>
               <span className="label" style={{display:'block'}}>Proveedor</span>
             </NavLink>
-            <NavLink
+            {/* <NavLink
               to="/refaccionaria/bd-codigos"
               className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
             >
               <span className="label">BD Codigos</span>
-            </NavLink>
+            </NavLink> */}
 
             <NavLink
               to="/refaccionaria/piezas-codigos"
               className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
             >
-              <span className="label">🔧 Códigos de Piezas</span>
+              <span className="label">Códigos de Piezas</span>
             </NavLink>
           </div>
         </div>

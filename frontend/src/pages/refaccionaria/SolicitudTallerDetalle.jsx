@@ -5,6 +5,9 @@ import {
   saveRequisicionDiagnostico,
 } from "../../api/vehiculos";
 
+import ModalBuscarCodigo from "./components/ModalBuscarCodigo";
+// null | index
+
 export default function SolicitudTallerDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -13,6 +16,7 @@ export default function SolicitudTallerDetalle() {
   const [refacciones, setRefacciones] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [modalCodigo, setModalCodigo] = useState(null); 
 
   const cargarOrden = async () => {
     try {
@@ -285,6 +289,30 @@ export default function SolicitudTallerDetalle() {
     }
   };
 
+  const aplicarCodigo = (index, pieza) => {
+    setRefacciones((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        return {
+          ...item,
+          nuevaOpcion: {
+            ...item.nuevaOpcion,
+            codigo:         pieza.codigo          || item.nuevaOpcion?.codigo      || "",
+            proveedor:      pieza.proveedor        || item.nuevaOpcion?.proveedor   || "",
+            marca:          pieza.marca            || item.nuevaOpcion?.marca       || "",
+            unidad:         pieza.unidadMedida     || item.nuevaOpcion?.unidad      || "",
+            precioUnitario: pieza.precioUnitario > 0
+                              ? String(pieza.precioUnitario)
+                              : item.nuevaOpcion?.precioUnitario || "",
+            observaciones:  item.nuevaOpcion?.observaciones || "",
+          },
+        };
+      })
+    );
+    setModalCodigo(null);
+  };
+
+
   const total = refacciones.reduce((sum, item) => {
     const totalOpciones = (item.opciones || []).reduce(
       (acc, op) => acc + Number(op.importeTotal || 0),
@@ -472,11 +500,16 @@ export default function SolicitudTallerDetalle() {
                         />
                       </td>
                       <td>
-                        <input
-                          className="form-control form-control-sm"
-                          value={item.nuevaOpcion?.codigo || ""}
-                          onChange={(e) => cambiarNuevaOpcion(index, "codigo", e.target.value)}
-                        />
+                        <div
+                          className="form-control form-control-sm d-flex align-items-center justify-content-between"
+                          style={{ cursor: "pointer", userSelect: "none", minWidth: 90 }}
+                          onClick={() => setModalCodigo(index)}
+                          title="Clic para buscar en catálogo"
+                        >
+                          <span style={{ color: item.nuevaOpcion?.codigo ? "#1e293b" : "#94a3b8", fontSize: 12 }}>
+                            {item.nuevaOpcion?.codigo || "Buscar…"}
+                          </span>
+                        </div>
                       </td>
                       <td>
                         <input
@@ -622,6 +655,15 @@ export default function SolicitudTallerDetalle() {
           </div>
         </div>
       </div>
+
+      {/* Modal buscar código */}
+      {modalCodigo !== null && (
+        <ModalBuscarCodigo
+          onCerrar={() => setModalCodigo(null)}
+          onSeleccionar={(pieza) => aplicarCodigo(modalCodigo, pieza)}
+        />
+      )}
+
     </div>
   );
 }
