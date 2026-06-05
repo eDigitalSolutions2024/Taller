@@ -26,6 +26,7 @@ import Devoluciones from "./pages/refaccionaria/devoluciones/DevolucionesLayout"
 import ConsultarInventario from "./pages/refaccionaria/ConsultarInventario";
 import ConsultarFacturaProveedor from "./pages/refaccionaria/ConsultarFacturaProveedor.jsx";
 import BDCodigos from "./pages/refaccionaria/BDCodigos";
+import PiezasCodigosPage from './pages/PiezasCodigosPage';
 
 
 import SolicitudesTaller from "./pages/refaccionaria/SolicitudesTaller";
@@ -137,6 +138,9 @@ export default function App() {
               element={<ConsultarFacturaProveedor />}
             />
             <Route path="bd-codigos" element={<BDCodigos />} />
+            <Route path="registar-codigos" element={<BDCodigos />} />
+            <Route path="piezas-codigos" element={<PiezasCodigosPage />} />
+
           </Route>
 
           {/* Empleados */}

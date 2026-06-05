@@ -31,6 +31,8 @@ const ordenesCompraRoutes      = require('./routes/ordenesCompra');
 const facturacionRoutes        = require("./routes/facturacion");
 const diagnosticosCatalogoRoutes = require('./routes/diagnosticosCatalogo');
 
+const piezasCodigosRoutes = require('./routes/piezasCodigosRoutes');
+
 app.use("/api/facturacion", facturacionRoutes);
 
 app.get('/', (_req, res) => res.send('API Taller OK'));
@@ -49,6 +51,9 @@ app.use('/api/ordenes-compra',     ordenesCompraRoutes);
 app.use('/api',                    require('./routes/facturas'));
 app.use("/api/fiscal-config",      require("./routes/fiscal_config"));
 app.use('/api/diagnosticos-catalogo', diagnosticosCatalogoRoutes);
+
+app.use('/api/piezas-codigos', piezasCodigosRoutes);
+
 console.log('✅ Ruta /api/diagnosticos-catalogo montada');
 
 app.use("/api/generar-xml",        require("./routes/generar_xml"));

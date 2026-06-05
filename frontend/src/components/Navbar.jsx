@@ -1,6 +1,7 @@
 import { getUser, logout } from '../auth';
 import { useNavigate, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import '../styles/Navbar.css';
 
 export default function Navbar({ collapsed, onToggle }) {
@@ -370,6 +371,13 @@ useEffect(() => {
               className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
             >
               <span className="label">BD Codigos</span>
+            </NavLink>
+
+            <NavLink
+              to="/refaccionaria/piezas-codigos"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">🔧 Códigos de Piezas</span>
             </NavLink>
           </div>
         </div>

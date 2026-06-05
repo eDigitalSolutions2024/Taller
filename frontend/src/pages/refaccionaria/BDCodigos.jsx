@@ -568,6 +568,8 @@ export default function BDCodigos() {
   );
 }
 
+export 
+
 function chev(sort, key) {
   if (sort.key !== key) return <span className="text-muted">▲▼</span>;
   return sort.dir === "asc" ? <span>▲</span> : <span>▼</span>;
