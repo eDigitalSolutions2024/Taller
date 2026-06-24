@@ -420,7 +420,7 @@ export default function SolicitudTallerDetalle() {
                 {refacciones.map((item, index) => (
                   <React.Fragment key={item._id || index}>
                     <tr className="table-secondary">
-                      <td colSpan={14}>
+                      <td colSpan={15}>
                         <strong>Solicitud:</strong> {item.refaccion} |
                         <strong className="ms-2">Cantidad:</strong> {item.cant}
                       </td>

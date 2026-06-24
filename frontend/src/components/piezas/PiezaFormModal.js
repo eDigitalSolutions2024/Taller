@@ -247,10 +247,10 @@ export default function PiezaFormModal({ abierto, onCerrar, onGuardar, piezaEdit
                 name="codigo"
                 value={form.codigo}
                 onChange={handleChange}
-                placeholder="Escribe o usa ⚡ Generar"
+                placeholder="Escribe o usa Generar"
                 style={{ ...ls.input, flex: 1, fontFamily: 'monospace', fontSize: 14, ...(errores.codigo ? { borderColor: '#ef4444', background: '#fef2f2' } : {}) }}
               />
-              <button type="button" style={ls.btnGenerar} onClick={handleGenerarCodigo}>⚡ Generar</button>
+              <button type="button" style={ls.btnGenerar} onClick={handleGenerarCodigo}>Generar</button>
             </div>
             {errores.codigo && <span style={ls.errMsg}>{errores.codigo}</span>}
           </div>

@@ -1,6 +1,6 @@
 // src/pages/vehiculo/VehiculoNuevoForm.jsx
 import React, { useEffect, useState } from "react";
-import { createVehiculo, updateDatosOrden } from "../../api/vehiculos";
+import { createVehiculo, updateDatosOrden, openContratoClientePdf } from "../../api/vehiculos";
 import VehicleDamageCanvas from "../../components/VehicleDamageCanvas";
 import { getUser } from "../../auth";
 
@@ -241,8 +241,8 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
   // ── Precarga cliente ──────────────────────────────────
   useEffect(() => {
     if (!cliente) return;
-    const tel = cliente.telefono || {};
-    const cel = cliente.celular  || {};
+    const tel = (cliente.telefonos || [])[0] || {};
+    const cel = (cliente.celulares || [])[0] || {};
     const dir = cliente.requiereFacturacion
       ? cliente.facturacion?.direccion || {}
       : cliente.direccion || {};
@@ -279,11 +279,44 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
   // ── Precarga initialData (detalle/edición) ────────────
   useEffect(() => {
     if (!initialData) return;
+    const insp         = initialData.inspeccionFisica || {};
+    const c            = initialData.cliente          || {};
+    const tel          = (c.telefonos  || [])[0] || {};
+    const cel          = (c.celulares  || [])[0] || {};
+    const dir          = c.direccion              || {};
+    const gob          = c.gobierno               || {};
+    const dep          = (gob.dependencia)        || {};
+    const contactoGob  = gob.contactoGobierno     || {};
+    const contactoDep  = dep.contacto             || {};
+
     setForm((prev) => ({
       ...prev,
       ...initialData,
-      fechaRecepcion: formatDateForInput(initialData.fechaRecepcion),
-      horaRecepcion:  initialData.horaRecepcion || "",
+      // Flatten inspeccionFisica subdocument into form state
+      ...insp,
+      // Extract client fields from populated cliente reference
+      nombreCliente:             c.nombre             || "",
+      apellidoPaterno:           c.apellidoPaterno    || "",
+      apellidoMaterno:           c.apellidoMaterno    || "",
+      nombreGobierno:            gob.nombreGobierno   || c.nombre || "",
+      nombreContactoGobierno:    contactoGob.nombre   || c.empresa?.contacto?.nombre || "",
+      nombreDependencia:         dep.nombre           || "",
+      nombreContactoDependencia: contactoDep.nombre   || "",
+      telefonoFijoLada: tel.lada   || "",
+      telefonoFijo:     tel.numero || "",
+      celularLada:      cel.lada   || "",
+      celular:          cel.numero || "",
+      direccion:        dir.calle           || "",
+      numeroExt:        dir.numeroExterior  || "",
+      numeroInt:        dir.numeroInterior  || "",
+      colonia:          dir.colonia         || "",
+      codigoPostal:     dir.codigoPostal    || "",
+      ciudad:           dir.ciudad          || "",
+      estado:           dir.estado          || "",
+      rfc:              c.rfc               || "",
+      correos:          Array.isArray(c.emails) ? c.emails : [],
+      fechaRecepcion:   formatDateForInput(initialData.fechaRecepcion),
+      horaRecepcion:    initialData.horaRecepcion || "",
       presupuestoItems: Array.isArray(initialData.presupuestoItems) && initialData.presupuestoItems.length
         ? initialData.presupuestoItems
         : [{ descripcion: "", importe: "" }],
@@ -302,20 +335,49 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     if (efectivoReadOnly || guardando || guardado) return;
 
     // Separar archivos pesados del payload principal
-    const { fotosVehiculo, danoVehiculo, ...formDatos } = form;
+    const { fotosVehiculo, ...formDatos } = form;
+
+    const inspeccionFisica = {
+      grua:                 form.grua,
+      precioGrua:           form.grua === "SI" ? Number(form.precioGrua || 0) : 0,
+      espejoLateralIzq:     form.espejoLateralIzq,
+      espejoLateralDer:     form.espejoLateralDer,
+      copasDelanterasIzq:   form.copasDelanterasIzq,
+      copasDelanterasDer:   form.copasDelanterasDer,
+      parabrisas:           form.parabrisas,
+      focosDel:             form.focosDel,
+      focosTras:            form.focosTras,
+      espejoInt:            form.espejoInt,
+      tapetesDelanterosIzq: form.tapetesDelanterosIzq,
+      tapetesDelanterosDer: form.tapetesDelanterosDer,
+      estereo:              form.estereo,
+      extra:                form.extra,
+      copasTraserasIzq:     form.copasTraserasIzq,
+      copasTraserasDer:     form.copasTraserasDer,
+      micas:                form.micas,
+      antena:               form.antena,
+      encendedor:           form.encendedor,
+      tapetesTraserosIzq:   form.tapetesTraserosIzq,
+      tapetesTraserosDer:   form.tapetesTraserosDer,
+      gato:                 form.gato,
+      bateria:              form.bateria,
+      nivelGasolina:        form.nivelGasolina,
+      danoVehiculo:         form.danoVehiculo || null,
+      checkEngine:          form.checkEngine,
+      abs:                  form.abs,
+      airBag:               form.airBag,
+      frenos:               form.frenos,
+      aceite:               form.aceite,
+      alternador:           form.alternador,
+      indicadoresTablero:   form.indicadoresTablero,
+      otros:                form.otros,
+      observaciones:        form.observaciones,
+    };
 
     const payload = {
       ...formDatos,
-      precioGrua: form.grua === "SI" ? Number(form.precioGrua || 0) : 0,
-      correos:    form.correos || [],
-      // Canvas comprimido como JPEG (mucho más liviano que PNG)
-      danoVehiculo: danoVehiculo || null,
-      // Fotos comprimidas individualmente
-      fotosVehiculo: (fotosVehiculo || []).map((f) => ({
-        id:   f.id,
-        name: f.name,
-        src:  f.src,   // ya viene comprimido por comprimirImagen()
-      })),
+      inspeccionFisica,
+      correos: form.correos || [],
     };
 
     // Verificar tamaño aproximado antes de enviar
@@ -722,7 +784,7 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
           </div>
 
           {/* ====== BOTONES ====== */}
-          <div className="mt-3">
+          <div className="mt-3 d-flex gap-2 flex-wrap align-items-center">
             {!readOnly && (
               <button type="submit" className="btn btn-success px-5" disabled={guardando||guardado}>
                 {guardando?"Guardando...":guardado?"Guardado":"Guardar"}
@@ -732,10 +794,19 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
               <button type="button" className="btn btn-warning px-5" onClick={() => setEditandoAdmin(true)}>Editar</button>
             )}
             {readOnly && isAdmin && editandoAdmin && (
-              <div className="d-flex gap-2">
+              <>
                 <button type="submit" className="btn btn-success px-5" disabled={guardando}>{guardando?"Guardando...":"Guardar cambios"}</button>
                 <button type="button" className="btn btn-secondary px-4" disabled={guardando} onClick={() => setEditandoAdmin(false)}>Cancelar</button>
-              </div>
+              </>
+            )}
+            {initialData?._id && (
+              <button
+                type="button"
+                className="btn btn-outline-primary px-4"
+                onClick={() => openContratoClientePdf(initialData._id)}
+              >
+                Imprimir Contrato
+              </button>
             )}
           </div>
 

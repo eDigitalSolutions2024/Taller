@@ -39,9 +39,11 @@ export default function PorSurtir() {
 
 
   const nombreCliente = (orden) =>
-    [orden.cliente?.nombre, orden.apellidoPaterno, orden.apellidoMaterno]
+    orden.cliente?.gobierno?.nombreGobierno ||
+    [orden.cliente?.nombre, orden.cliente?.apellidoPaterno, orden.cliente?.apellidoMaterno]
       .filter(Boolean)
-      .join(" ") || orden.nombreGobierno || "Sin cliente";
+      .join(" ") ||
+    "Sin cliente";
 
   const toggleSurtida = (ordenId, presIdx) => {
     setOrdenes((prev) =>

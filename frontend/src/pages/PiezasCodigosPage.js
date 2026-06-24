@@ -116,7 +116,7 @@ export default function PiezasCodigosPage() {
         <div>
           <h1 style={estilos.titulo}>
             🔧 Códigos de Piezas
-            <span style={estilos.badgePrueba}>PRUEBA</span>
+            
           </h1>
           <p style={estilos.subtitulo}>
             Catálogo de refacciones — {totalPiezas} piezas registradas
