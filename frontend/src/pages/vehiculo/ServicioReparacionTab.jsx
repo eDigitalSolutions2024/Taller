@@ -3,25 +3,27 @@ import React, { useEffect, useState } from "react";
 import { updateServicioReparacion, saveRequisicionDiagnostico } from "../../api/vehiculos";
 import { fetchServiciosTaller } from "../../api/codigos";
 
-const emptyServicio = {
+const GRUPO_LABELS = {
+  motor:      "Mantenimiento del motor",
+  lubricacion: "Lubricación",
+  revision:   "Revisión",
+  otros:      "Otros servicios",
+};
+
+const GRUPO_ORDER = ["motor", "lubricacion", "revision", "otros"];
+
+const emptyForm = {
   serviciosSeleccionados: [],
-  fallasReportadasCliente: "",   // ✅ Agregado
+  fallasReportadasCliente: "",
   infoLlantas: "",
   revisionFallas: "",
 };
 
-export default function ServicioReparacionTab({
-  ordenId,
-  initialData,
-  onSaved,
-  yaCerrada
-}) {
-  const [form, setForm] = useState(emptyServicio);
-  const [saving, setSaving] = useState(false);
+export default function ServicioReparacionTab({ ordenId, initialData, onSaved, yaCerrada }) {
+  const [form, setForm] = useState(emptyForm);
   const [catalogoServicios, setCatalogoServicios] = useState([]);
   const [cargandoServicios, setCargandoServicios] = useState(false);
 
-  // ✅ Estado del modal de refacciones
   const [showModal, setShowModal] = useState(false);
   const [refacciones, setRefacciones] = useState([{ refaccion: "", cantidad: 1 }]);
   const [guardandoRefacciones, setGuardandoRefacciones] = useState(false);
@@ -30,7 +32,7 @@ export default function ServicioReparacionTab({
     if (initialData) {
       setForm({
         serviciosSeleccionados: initialData.serviciosSeleccionados || [],
-        fallasReportadasCliente: initialData.fallasReportadasCliente || "",  // ✅ Agregado
+        fallasReportadasCliente: initialData.fallasReportadasCliente || "",
         infoLlantas: initialData.infoLlantas || "",
         revisionFallas: initialData.revisionFallas || "",
       });
@@ -38,66 +40,42 @@ export default function ServicioReparacionTab({
   }, [initialData]);
 
   useEffect(() => {
-    const cargarServicios = async () => {
+    const cargar = async () => {
       try {
         setCargandoServicios(true);
         const servicios = await fetchServiciosTaller();
         setCatalogoServicios(servicios);
       } catch (err) {
         console.error("Error cargando servicios:", err);
-        setCatalogoServicios([]);
       } finally {
         setCargandoServicios(false);
       }
     };
-    cargarServicios();
+    cargar();
   }, []);
 
-  const handleChangeText = (e) => {
-    if (yaCerrada) return;
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
+  const serviciosPorGrupo = GRUPO_ORDER.reduce((acc, grupo) => {
+    const items = catalogoServicios.filter(
+      (s) => (s.grupoServicio || "otros") === grupo
+    );
+    if (items.length > 0) acc[grupo] = items;
+    return acc;
+  }, {});
 
-  const toggleServicio = (codigoServicio) => {
+  const toggleServicio = (codigo) => {
     if (yaCerrada) return;
     setForm((prev) => {
-      const yaEsta = prev.serviciosSeleccionados.includes(codigoServicio);
+      const yaEsta = prev.serviciosSeleccionados.includes(codigo);
       return {
         ...prev,
         serviciosSeleccionados: yaEsta
-          ? prev.serviciosSeleccionados.filter((c) => c !== codigoServicio)
-          : [...prev.serviciosSeleccionados, codigoServicio],
+          ? prev.serviciosSeleccionados.filter((c) => c !== codigo)
+          : [...prev.serviciosSeleccionados, codigo],
       };
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!ordenId || yaCerrada) return;
-
-    try {
-      setSaving(true);
-      const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
-        const srv = catalogoServicios.find((s) => s.codigo === codigo);
-        return {
-          concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`
-        };
-      });
-
-      const payload = { ...form, manoObraGenerada };
-      const res = await updateServicioReparacion(ordenId, payload);
-      alert("Orden iniciada. Los servicios se enviaron al presupuesto.");
-      if (onSaved) onSaved(res.data.vehiculo);
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar el diagnóstico");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ✅ Handlers del modal de refacciones
+  // ===== Solicitud de refacciones =====
   const agregarRefaccion = () =>
     setRefacciones((prev) => [...prev, { refaccion: "", cantidad: 1 }]);
 
@@ -138,16 +116,16 @@ export default function ServicioReparacionTab({
     try {
       setGuardandoRefacciones(true);
 
-      // 1. Guardar el servicio primero
+      // Guardar el servicio con mano de obra generada
       const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
         const srv = catalogoServicios.find((s) => s.codigo === codigo);
         return {
-          concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`
+          concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`,
         };
       });
       await updateServicioReparacion(ordenId, { ...form, manoObraGenerada });
 
-      // 2. Enviar refacciones
+      // Enviar refacciones a refaccionaria
       const res = await saveRequisicionDiagnostico(ordenId, {
         refacciones: validas,
         estadoOrden: "PENDIENTE_REFACCIONARIA",
@@ -170,121 +148,147 @@ export default function ServicioReparacionTab({
 
   return (
     <>
-      <form onSubmit={handleSubmit}>
-        <div className="card">
-          <div className="card-header fw-bold d-flex justify-content-between align-items-center">
-            Servicio o Reparación
-            {yaCerrada && <span className="badge bg-secondary">Solo Lectura</span>}
-          </div>
-          <div className="card-body">
+      <div className="card">
+        <div className="card-header fw-bold text-center bg-light d-flex justify-content-between align-items-center">
+          <span>SERVICIO O REPARACIÓN</span>
+          {yaCerrada && <span className="badge bg-secondary">Solo Lectura</span>}
+        </div>
 
-            {/* Tabla de servicios */}
-            <div className="table-responsive mb-3">
-              <table className="table table-bordered table-sm">
-                <thead>
-                  <tr>
-                    <th>Servicio</th>
-                    <th className="text-center">Generales</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cargandoServicios && (
-                    <tr><td colSpan={2}>Cargando servicios...</td></tr>
-                  )}
-                  {!cargandoServicios && catalogoServicios.map((srv) => {
-                    const codigo = srv.codigo;
-                    const activo = form.serviciosSeleccionados.includes(codigo);
-                    const descripcion = srv.descripcion || srv.label;
-                    return (
-                      <tr key={srv._id || codigo}>
-                        <td>{codigo} - {descripcion}</td>
-                        <td className="text-center">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={activo}
-                            onChange={() => toggleServicio(codigo)}
-                            disabled={yaCerrada}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="card-body">
 
-            {/* ✅ Fallas reportadas por el cliente */}
-            <div className="mb-3">
-              <label className="form-label fw-semibold">FALLAS REPORTADAS POR EL CLIENTE</label>
-              <textarea
-                className="form-control"
-                rows={4}
-                name="fallasReportadasCliente"
-                placeholder="Describe las fallas o síntomas que reportó el cliente..."
-                value={form.fallasReportadasCliente}
-                onChange={handleChangeText}
-                disabled={yaCerrada}
-              />
-            </div>
+          {/* ===== SERVICIOS DESDE BD CÓDIGOS ===== */}
+          <div className="mb-4">
+            <h6 className="fw-bold text-uppercase mb-3 border-bottom pb-2">
+              Servicios realizados
+            </h6>
 
-            <div className="mb-3">
-              <label className="form-label fw-semibold">INFORMACIÓN DE LLANTAS</label>
-              <textarea
-                className="form-control"
-                rows={3}
-                name="infoLlantas"
-                value={form.infoLlantas}
-                placeholder="Estado de las llantas, medidas, observaciones..."
-                onChange={handleChangeText}
-                disabled={yaCerrada}
-              />
-            </div>
+            {cargandoServicios && (
+              <p className="text-muted">Cargando servicios...</p>
+            )}
 
-            <div className="mb-3">
-              <label className="form-label fw-semibold">OBSERVACIONES GENERALES</label>
-              <textarea
-                className="form-control"
-                rows={3}
-                name="revisionFallas"
-                value={form.revisionFallas}
-                placeholder="Observaciones adicionales sobre el servicio o reparación..."
-                onChange={handleChangeText}
-                disabled={yaCerrada}
-              />
-            </div>
-
-            {/* Botones */}
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-              {/* ✅ Botón solicitar refacciones */}
-              {!yaCerrada && (
-                <button
-                  type="button"
-                  className="btn btn-outline-primary"
-                  onClick={() => setShowModal(true)}
-                >
-                  Solicitar refacciones a refaccionaria
-                </button>
-              )}
-
-              <div className="ms-auto">
-                {!yaCerrada ? (
-                  <button type="submit" className="btn btn-primary px-5" disabled={saving}>
-                    {saving ? "Guardando..." : "Guardar"}
-                  </button>
-                ) : (
-                  <div className="alert alert-warning d-inline-block mb-0">
-                    Esta orden ya ha sido cerrada y no permite modificaciones.
-                  </div>
-                )}
+            {!cargandoServicios && catalogoServicios.length === 0 && (
+              <div className="alert alert-warning py-2">
+                No hay servicios dados de alta en BD de Códigos. Da de alta servicios en el módulo{" "}
+                <strong>Refaccionaria → BD Códigos</strong>.
               </div>
-            </div>
+            )}
 
+            {!cargandoServicios &&
+              Object.entries(serviciosPorGrupo).map(([grupo, items]) => (
+                <div key={grupo} className="mb-3">
+                  <p className="text-muted small fw-semibold text-uppercase mb-2">
+                    {GRUPO_LABELS[grupo] || grupo}
+                  </p>
+                  <div className="d-flex flex-wrap gap-2">
+                    {items.map((srv) => {
+                      const activo = form.serviciosSeleccionados.includes(srv.codigo);
+                      return (
+                        <button
+                          key={srv._id || srv.codigo}
+                          type="button"
+                          onClick={() => toggleServicio(srv.codigo)}
+                          disabled={yaCerrada}
+                          className={
+                            "btn btn-sm " +
+                            (activo ? "btn-primary" : "btn-outline-secondary")
+                          }
+                          title={srv.descripcion}
+                        >
+                          {srv.descripcion || srv.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+            {/* Resumen de seleccionados */}
+            {form.serviciosSeleccionados.length > 0 && (
+              <div className="mt-2 p-2 bg-light rounded border">
+                <small className="text-muted fw-semibold">Seleccionados: </small>
+                {form.serviciosSeleccionados.map((codigo) => {
+                  const srv = catalogoServicios.find((s) => s.codigo === codigo);
+                  return (
+                    <span key={codigo} className="badge bg-primary me-1">
+                      {codigo}{srv ? ` - ${srv.descripcion}` : ""}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ===== FALLAS REPORTADAS POR EL CLIENTE ===== */}
+          <div className="mb-4">
+            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
+              Fallas reportadas por el cliente
+            </h6>
+            <textarea
+              className="form-control"
+              rows={4}
+              placeholder="Describe las fallas o síntomas que reportó el cliente..."
+              value={form.fallasReportadasCliente}
+              disabled={yaCerrada}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, fallasReportadasCliente: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* ===== INFORMACIÓN DE LLANTAS ===== */}
+          <div className="mb-4">
+            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
+              Información de llantas
+            </h6>
+            <textarea
+              className="form-control"
+              rows={2}
+              placeholder="Estado de las llantas, medidas, observaciones..."
+              value={form.infoLlantas}
+              disabled={yaCerrada}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, infoLlantas: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* ===== OBSERVACIONES GENERALES ===== */}
+          <div className="mb-4">
+            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
+              Observaciones generales
+            </h6>
+            <textarea
+              className="form-control"
+              rows={3}
+              placeholder="Observaciones adicionales sobre el servicio o reparación..."
+              value={form.revisionFallas}
+              disabled={yaCerrada}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, revisionFallas: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* ===== BOTONES ===== */}
+          <div className="d-flex justify-content-end">
+            {yaCerrada ? (
+              <div className="alert alert-warning d-inline-block mb-0">
+                Esta orden ya ha sido cerrada y no permite modificaciones.
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary px-5"
+                onClick={() => setShowModal(true)}
+              >
+                Solicitar refacciones a refaccionaria →
+              </button>
+            )}
           </div>
         </div>
-      </form>
+      </div>
 
-      {/* ✅ Modal solicitud de refacciones */}
+      {/* ===== MODAL SOLICITUD DE REFACCIONES ===== */}
       {showModal && (
         <div
           className="modal fade show"
@@ -307,8 +311,8 @@ export default function ServicioReparacionTab({
 
               <div className="modal-body">
                 <p className="text-muted small mb-3">
-                  Indica las refacciones que necesita el vehículo. El
-                  refaccionario recibirá esta solicitud y cotizará las opciones.
+                  Indica las refacciones que necesita el vehículo. El refaccionario
+                  recibirá esta solicitud y cotizará las opciones.
                 </p>
 
                 <table className="table table-sm table-bordered align-middle">

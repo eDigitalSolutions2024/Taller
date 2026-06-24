@@ -3,14 +3,27 @@ import { listOrdenesServicio } from "../../api/vehiculos";
 import { useNavigate } from "react-router-dom";
 
 const TABS = [
-  { key: "PENDIENTE_CAPTURA",            label: "PENDIENTE CAPTURA" },
-  { key: "PENDIENTE_REFACCIONARIA",      label: "PENDIENTE REFACCIONARIA" },
-  { key: "PENDIENTE_AUTORIZACION",       label: "PENDIENTE AUTORIZACION" },
+  { key: "PENDIENTE_CAPTURA",              label: "PENDIENTE CAPTURA" },
+  { key: "PENDIENTE_REFACCIONARIA",        label: "PENDIENTE REFACCIONARIA" },
   { key: "PENDIENTE_AUTORIZACION_CLIENTE", label: "PENDIENTE AUTORIZACION CLIENTE" },
-  { key: "REPARACION_EN_CURSO",          label: "REPARACIÓN EN CURSO" },
-  { key: "CALIDAD",                      label: "CALIDAD" },
-  { key: "PENDIENTE_CERRAR",             label: "PENDIENTE DE CERRAR" },
+  { key: "PENDIENTE_SURTIR",               label: "PENDIENTE SURTIR" },
+  { key: "PENDIENTE_CIERRE",               label: "PENDIENTE CIERRE" },
+  { key: "REPARACION_EN_CURSO",            label: "REPARACIÓN EN CURSO" },
+  { key: "CALIDAD",                        label: "CALIDAD" },
+  { key: "PENDIENTE_CERRAR",               label: "PENDIENTE DE CERRAR" },
 ];
+
+const TAB_MAP = {
+  PENDIENTE_CAPTURA:              "datos",
+  PENDIENTE_REFACCIONARIA:        "req",
+  PENDIENTE_AUTORIZACION_CLIENTE: "req",
+  PENDIENTE_SURTIR:               "presupuesto",
+  REPARACION_EN_CURSO:            "reparacion",
+  PENDIENTE_CIERRE:               "general",
+  PENDIENTE_CERRAR:               "general",
+  CERRADA:                        "general",
+  CALIDAD:                        "general",
+};
 
 export default function VehiculosConsultaOrdenes() {
   const [tab,     setTab]     = useState("PENDIENTE_CAPTURA");
@@ -38,9 +51,10 @@ export default function VehiculosConsultaOrdenes() {
   const ALL_ESTADOS = [
     "PENDIENTE_CAPTURA",
     "PENDIENTE_REFACCIONARIA",
-    "PENDIENTE_AUTORIZACION",
-    "REPARACION_EN_CURSO",
     "PENDIENTE_AUTORIZACION_CLIENTE",
+    "PENDIENTE_SURTIR",
+    "PENDIENTE_CIERRE",
+    "REPARACION_EN_CURSO",
     "CALIDAD",
     "PENDIENTE_CERRAR",
     "CERRADA",
@@ -101,15 +115,17 @@ export default function VehiculosConsultaOrdenes() {
   const totalPages = Math.ceil(total / limit) || 1;
 
   // ── Render fila ────────────────────────────────────────────────────────
-  const RowOrden = ({ r }) => (
-    <tr style={{ cursor: "pointer" }} onClick={() => navigate(`/vehiculo/orden/${r._id}`)}>
+  const RowOrden = ({ r }) => {
+    const targetTab = TAB_MAP[r.estadoOrden] || "datos";
+    return (
+    <tr style={{ cursor: "pointer" }} onClick={() => navigate(`/vehiculo/orden/${r._id}?tab=${targetTab}`)}>
       <td className="text-center">{r.ordenServicio || "-"}</td>
-      <td>{r.nombreCliente || r.nombreGobierno || r.cliente?.nombre || "-"}</td>
+      <td>{r.cliente?.gobierno?.nombreGobierno || [r.cliente?.nombre, r.cliente?.apellidoPaterno, r.cliente?.apellidoMaterno].filter(Boolean).join(" ") || "-"}</td>
       <td>{(r.marca || "") + (r.modelo ? " / " + r.modelo : "") || "-"}</td>
       <td className="text-center">{r.anio    || "-"}</td>
       <td className="text-center">{r.placas  || "-"}</td>
       <td className="text-center">{r.fechaRecepcion ? new Date(r.fechaRecepcion).toLocaleDateString() : "-"}</td>
-      <td className="text-center">{r.celular || r.telefonoFijo || "-"}</td>
+      <td className="text-center">{r.cliente?.celulares?.[0]?.numero || r.cliente?.telefonos?.[0]?.numero || "-"}</td>
       <td className="text-center">{r.asesor  || "admin"}</td>
       <td className="text-center">
         <span className="badge" style={{
@@ -125,6 +141,7 @@ export default function VehiculosConsultaOrdenes() {
       </td>
     </tr>
   );
+  };
 
   const TableHead = ({ showEstado = false }) => (
     <thead className="table-light">
@@ -181,7 +198,7 @@ export default function VehiculosConsultaOrdenes() {
               <div
                 className="mt-3 p-3 rounded border border-primary"
                 style={{ cursor: "pointer", background: "#f0f7ff" }}
-                onClick={() => navigate(`/vehiculo/orden/${globalResult._id}`)}
+                onClick={() => navigate(`/vehiculo/orden/${globalResult._id}?tab=${TAB_MAP[globalResult.estadoOrden] || "datos"}`)}
               >
                 <div className="d-flex justify-content-between align-items-start flex-wrap gap-1">
                   <div>
@@ -200,7 +217,7 @@ export default function VehiculosConsultaOrdenes() {
                 </div>
                 <div className="mt-1" style={{ fontSize: 13 }}>
                   <strong>Cliente:</strong>{" "}
-                  {globalResult.nombreCliente || globalResult.nombreGobierno || globalResult.cliente?.nombre || "-"}
+                  {globalResult.cliente?.gobierno?.nombreGobierno || globalResult.cliente?.nombre || "-"}
                   {" · "}
                   <strong>Vehículo:</strong>{" "}
                   {[globalResult.marca, globalResult.modelo, globalResult.anio].filter(Boolean).join(" ")}

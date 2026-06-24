@@ -164,8 +164,8 @@ export default function AltaCliente() {
         const merged = {
           ...initial,
           ...c,
-          telefono: { ...initial.telefono, ...(c.telefono || {}) },
-          celular: { ...initial.celular, ...(c.celular || {}) },
+          telefono: { ...initial.telefono, ...((c.telefonos || [])[0] || c.telefono || {}) },
+          celular:  { ...initial.celular,  ...((c.celulares || [])[0] || c.celular  || {}) },
           direccion: { ...initial.direccion, ...(c.direccion || {}) },
           facturacion: {
             ...initial.facturacion,
@@ -289,6 +289,20 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
       }
       if (payload.tipoCliente === "Empresa Gobierno") {
         delete payload.empresa;
+      }
+
+      // Adaptar campos singulares del formulario al modelo con arrays
+      if (payload.telefono) {
+        payload.telefonos = [payload.telefono];
+        delete payload.telefono;
+      }
+      if (payload.celular) {
+        payload.celulares = [payload.celular];
+        delete payload.celular;
+      }
+      if (payload.email !== undefined) {
+        payload.emails = [payload.email].filter(Boolean);
+        delete payload.email;
       }
 
       if (isEdit) {

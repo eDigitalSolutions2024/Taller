@@ -146,6 +146,20 @@ function ModalNuevoCliente({ onClose, onClienteCreado }) {
       if (payload.tipoCliente === "Empresa Privada" || payload.tipoCliente === "Empresa Arrendadora") delete payload.gobierno;
       if (payload.tipoCliente === "Empresa Gobierno") delete payload.empresa;
 
+      // Adaptar campos singulares del formulario al modelo con arrays
+      if (payload.telefono) {
+        payload.telefonos = [payload.telefono];
+        delete payload.telefono;
+      }
+      if (payload.celular) {
+        payload.celulares = [payload.celular];
+        delete payload.celular;
+      }
+      if (payload.email) {
+        payload.emails = [payload.email].filter(Boolean);
+        delete payload.email;
+      }
+
       const res = await createCustomer(payload);
       onClienteCreado(res.data.data);   // agrega a la lista y cierra
     } catch (err) {

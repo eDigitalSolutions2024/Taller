@@ -30,8 +30,8 @@ const ContactoSchema = new Schema(
   {
     nombre: { type: String, trim: true },
     correo: { type: String, trim: true, lowercase: true },
-    telefono: { type: TelefonoSchema, default: undefined },
-    celular: { type: TelefonoSchema, default: undefined },
+    telefonos: { type: [TelefonoSchema], default: [] },
+    celulares: { type: [TelefonoSchema], default: [] },
     departamento: { type: String, trim: true },
     puesto: { type: String, trim: true },
   },
@@ -67,6 +67,8 @@ const FacturacionSchema = new Schema(
   {
     mismaQueDireccion: { type: Boolean, default: true },
     direccion: { type: DireccionSchema, default: undefined },
+    regimenFiscal: { type: String, trim: true },
+    usoCFDI: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -82,66 +84,60 @@ const TIPOS = [
 
 const ClienteSchema = new Schema(
   {
-    // Tipo controla qué ramas se usan (empresa/gobierno/particular)
     tipoCliente: { type: String, enum: TIPOS, default: "Particular", index: true },
 
-    // Datos “particular” (también útiles como contacto general)
     nombre: { type: String, trim: true },
     apellidoPaterno: { type: String, trim: true },
     apellidoMaterno: { type: String, trim: true },
-    email: { type: String, trim: true, lowercase: true },
-    telefono: { type: TelefonoSchema, default: undefined },
-    celular: { type: TelefonoSchema, default: undefined },
+    emails: [{ type: String, trim: true, lowercase: true }],
+    telefonos: { type: [TelefonoSchema], default: [] },
+    celulares: { type: [TelefonoSchema], default: [] },
 
-    // Fiscal/ubicación comunes
+    requiereFacturacion: { type: Boolean, default: false },
     rfc: { type: String, trim: true, uppercase: true },
-    // Fiscal CFDI (lo mínimo para timbrar)
     regimenFiscal: {
       type: String,
       trim: true,
       enum: [
-        "601","603","605","606","607","608","610","611",
-        "612","614","615","616","620","621","622","623",
-        "624","625","626"
+        "601","602","603","604","605","606","607","608","609","610",
+        "611","612","613","614","615","616","617","618","619","620",
+        "621","622","623","624","625","626"
       ]
     },
     codigoPostalFiscal: { type: String, trim: true, default: "" },
     direccion: { type: DireccionSchema, default: undefined },
-    facturacion: { type: FacturacionSchema, default: () => ({ mismaQueDireccion: true }) },
+    facturacion: { type: FacturacionSchema, default: undefined },
 
-    // Extra
     asesorResponsable: { type: String, trim: true },
     condicionesPago: { type: String, trim: true },
     observaciones: { type: String, trim: true },
+    pais: { type: String, trim: true, default: "México" },
 
-    // Ramas por tipo
-    empresa: { type: EmpresaSchema, default: undefined },   // Privada / Arrendadora
-    gobierno: { type: GobiernoSchema, default: undefined }, // Gobierno
+    empresa: { type: EmpresaSchema, default: undefined },
+    gobierno: { type: GobiernoSchema, default: undefined },
   },
   { timestamps: true }
 );
 
 /* ---------- Índices para búsqueda de texto ---------- */
-// Permite buscar por nombre/apellidos, email, RFC, razón social, gobierno y dependencia
 ClienteSchema.index({
   nombre: "text",
   apellidoPaterno: "text",
   apellidoMaterno: "text",
-  email: "text",
+  emails: "text",
   rfc: "text",
   "empresa.razonSocial": "text",
   "gobierno.nombreGobierno": "text",
   "gobierno.dependencia.nombre": "text",
 });
 
-/* ---------- Normalización y validaciones ---------- */
-
-// Asegura mayúsculas en RFC y minúsculas en email (por si llegan sin normalizar)
+/* ---------- Normalización ---------- */
 ClienteSchema.pre("save", function (next) {
   if (this.rfc) this.rfc = String(this.rfc).toUpperCase().trim();
-  if (this.email) this.email = String(this.email).toLowerCase().trim();
+  if (this.emails?.length) {
+    this.emails = this.emails.map(e => String(e).toLowerCase().trim());
+  }
 
-  // Si facturación “mismaQueDireccion” y no hay dirección copiada, duplica
   if (
     this.facturacion &&
     this.facturacion.mismaQueDireccion &&
@@ -153,7 +149,7 @@ ClienteSchema.pre("save", function (next) {
   next();
 });
 
-// Validación por tipo: exige campos mínimos según tipo de cliente
+/* ---------- Validaciones por tipo ---------- */
 ClienteSchema.pre("validate", function (next) {
   const t = this.tipoCliente;
 
@@ -161,15 +157,7 @@ ClienteSchema.pre("validate", function (next) {
     if (!this.nombre || !this.nombre.trim()) {
       this.invalidate("nombre", "El nombre es obligatorio para clientes particulares.");
     }
-    // Limpia ramas no usadas
     this.empresa = undefined;
-    this.gobierno = undefined;
-  }
-
-  if (t === "Empresa Privada" || t === "Empresa Arrendadora") {//|| !this.empresa.razonSocial || !this.empresa.razonSocial.trim()
-    if (!this.empresa  ) {
-      this.invalidate("empresa.razonSocial", "La razón social es obligatoria para empresas.");
-    }
     this.gobierno = undefined;
   }
 
