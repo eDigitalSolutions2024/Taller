@@ -2,23 +2,99 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   saveRequisicionDiagnostico,
+  updateHistorialDiagnostico,
   generarOrdenCompra,
 } from "../../api/vehiculos";
 import http from "../../api/http";
 
-export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPresupuesto }) {
+// Modal para corregir el texto de una entrada ya guardada en el historial de
+// diagnósticos (no cambia la fecha original, solo el texto).
+function EditarDiagnosticoModal({ entry, saving, onSave, onClose }) {
+  const [texto, setTexto] = useState(entry?.texto || "");
+
+  if (!entry) return null;
+
+  return (
+    <div
+      className="modal d-block"
+      tabIndex="-1"
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="modal-dialog">
+        <div className="modal-content">
+          <div className="modal-header">
+            <h5 className="modal-title fw-bold">Editar diagnóstico</h5>
+            <button type="button" className="btn-close" onClick={onClose} />
+          </div>
+
+          <div className="modal-body">
+            <small className="text-muted d-block mb-2">
+              {entry.fecha ? new Date(entry.fecha).toLocaleString("es-MX") : ""}
+            </small>
+            <textarea
+              className="form-control"
+              rows={5}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-success"
+              onClick={() => onSave(texto)}
+              disabled={saving || !texto.trim()}
+            >
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPresupuesto, readOnly = false }) {
   const [diagnostico, setDiagnostico]     = useState("");
   const [rows, setRows]                   = useState([]);
   const [cargos, setCargos]               = useState([]);
   const [saving, setSaving]               = useState(false);
   const [savingLine, setSavingLine]       = useState(false);
   const [historialDiagnosticos, setHistorialDiagnosticos] = useState([]);
+  const [editEntry, setEditEntry]         = useState(null);
+  const [savingEdit, setSavingEdit]       = useState(false);
+
+  // El tab "req" hace polling cada 8s (ver VehiculoOrdenDetalle.jsx) para
+  // reflejar en vivo las cotizaciones de refaccionaria, y cada refresh trae
+  // un objeto `orden` nuevo. El diagnóstico es texto libre que el técnico
+  // captura y solo se guarda al pulsar un botón explícito: si se
+  // reinicializara en cada refresh, el polling borraría lo que aún no se
+  // había guardado. Por eso se inicializa una sola vez por orden (id), no en
+  // cada cambio de `orden`.
+  useEffect(() => {
+    if (!orden) return;
+    setDiagnostico(orden.diagnosticoTecnico || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orden?._id]);
+
+  // El diagnóstico es texto libre: no se guarda solo mientras el técnico
+  // escribe, solo cuando pulsa una acción explícita ("Guardar en historial
+  // del vehículo", "Guardar selección", "Continuar a Presupuesto", etc.),
+  // que ya mandan `diagnostico` en su payload.
+  const handleDiagnosticoChange = (e) => {
+    setDiagnostico(e.target.value);
+  };
 
   // ── Carga inicial ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!orden) return;
 
-    setDiagnostico(orden.diagnosticoTecnico || "");
     setHistorialDiagnosticos(orden.historialDiagnosticos || []);
 
     const refConEstatus = (orden.refaccionesSolicitadas || []).map((r) => ({
@@ -87,6 +163,24 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
     }
   };
 
+  // ── Editar una entrada ya guardada en el historial ──────────────────────
+  const handleGuardarEdicionHistorial = async (nuevoTexto) => {
+    if (!editEntry?._id) return;
+    try {
+      setSavingEdit(true);
+      const res = await updateHistorialDiagnostico(orden._id, editEntry._id, nuevoTexto);
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
+      setHistorialDiagnosticos((prev) =>
+        prev.map((d) => (d._id === editEntry._id ? { ...d, texto: nuevoTexto } : d))
+      );
+      setEditEntry(null);
+    } catch (err) {
+      alert("Error al editar el diagnóstico.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   // ── Guardar payload base ─────────────────────────────────────────────────
   const guardarRequisicion = async (estadoOrden) => {
     const payload = {
@@ -128,7 +222,9 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
   };
 
   const handleContinuarPresupuesto = async () => {
-    if (getSeleccionadas().length === 0) {
+    // Si el asesor omitió refacciones (orden de puros servicios), no hay
+    // nada que seleccionar aquí: se deja pasar directo a Presupuesto.
+    if (getSeleccionadas().length === 0 && !orden?.refaccionesOmitidas) {
       alert("Selecciona al menos una refacción para continuar al presupuesto.");
       return;
     }
@@ -184,10 +280,17 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
 
     setRows(nuevasFilas);
     try {
-      await saveRequisicionDiagnostico(orden._id, {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
       });
+      // Sincroniza de inmediato la orden del padre con la respuesta del
+      // servidor: si no se hace, el padre solo se entera de esta selección
+      // hasta el siguiente poll (cada 8s en el tab "req"), y si ese poll
+      // llega a dispararse antes de que este guardado termine, pisa la
+      // selección recién hecha con datos viejos (se ve "elegida" y luego,
+      // sin razón aparente, deja de estarlo).
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
     } catch (err) {
       alert("Error al elegir la refacción.");
     }
@@ -208,10 +311,11 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
     });
     setRows(nuevasFilas);
     try {
-      await saveRequisicionDiagnostico(orden._id, {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
       });
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
     } catch (err) {
       alert("Error al quitar la selección.");
     }
@@ -269,6 +373,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="card">
       <div className="card-body">
 
@@ -280,7 +385,8 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
               className="form-control"
               rows={3}
               value={diagnostico}
-              onChange={(e) => setDiagnostico(e.target.value)}
+              onChange={handleDiagnosticoChange}
+              disabled={readOnly}
             />
 
             <div className="mt-2">
@@ -288,6 +394,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                 type="button"
                 className="btn btn-outline-success btn-sm"
                 onClick={guardarDiagnosticoEnHistorial}
+                disabled={readOnly}
               >
                 Guardar en historial del vehículo
               </button>
@@ -299,7 +406,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                 <small className="text-muted">Sin diagnósticos previos.</small>
               )}
               {historialDiagnosticos.slice().reverse().map((d, idx) => (
-                <div key={idx} className="d-flex justify-content-between align-items-start mb-2">
+                <div key={d._id || idx} className="d-flex justify-content-between align-items-start mb-2">
                   <div style={{ maxWidth: "78%" }}>
                     <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
                     <small className="text-muted">
@@ -309,9 +416,11 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-primary"
-                    onClick={() => setDiagnostico(d.texto || "")}
+                    onClick={() => setEditEntry(d)}
+                    disabled={!d._id}
+                    title={!d._id ? "Esta entrada es de un formato antiguo y no se puede editar" : undefined}
                   >
-                    Usar
+                    Editar
                   </button>
                 </div>
               ))}
@@ -319,34 +428,36 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
           </div>
 
           {/* Botones principales */}
-          <div className="mt-4 d-flex flex-column gap-2 align-items-stretch">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleGuardarSeleccion}
-              disabled={saving}
-            >
-              Guardar selección
-            </button>
+          {!readOnly && (
+            <div className="mt-4 d-flex flex-column gap-2 align-items-stretch">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleGuardarSeleccion}
+                disabled={saving}
+              >
+                Guardar selección
+              </button>
 
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={handleRegresarRefaccionaria}
-              disabled={saving}
-            >
-              Regresar a Refaccionaria
-            </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={handleRegresarRefaccionaria}
+                disabled={saving}
+              >
+                Regresar a Refaccionaria
+              </button>
 
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleContinuarPresupuesto}
-              disabled={saving}
-            >
-              {saving ? "Guardando..." : "Continuar a Presupuesto"}
-            </button>
-          </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleContinuarPresupuesto}
+                disabled={saving}
+              >
+                {saving ? "Guardando..." : "Continuar a Presupuesto"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Opciones de refacciones ───────────────────────────────────── */}
@@ -430,6 +541,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                                 : "btn btn-outline-primary btn-sm w-100"
                             }
                             onClick={() => handleSeleccionarOpcion(idx, opIdx)}
+                            disabled={readOnly}
                           >
                             {op.seleccionada ? "Elegida ✓" : "Elegir"}
                           </button>
@@ -503,6 +615,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                         type="button"
                         className="btn btn-outline-danger btn-sm w-100"
                         onClick={() => handleQuitarSeleccion(idx)}
+                        disabled={readOnly}
                       >
                         Quitar
                       </button>
@@ -524,5 +637,14 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
 
       </div>
     </div>
+
+    <EditarDiagnosticoModal
+      key={editEntry?._id || "closed"}
+      entry={editEntry}
+      saving={savingEdit}
+      onSave={handleGuardarEdicionHistorial}
+      onClose={() => setEditEntry(null)}
+    />
+    </>
   );
 }

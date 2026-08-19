@@ -1,7 +1,4 @@
-import axiosClient from "./axios"; // tu axios custom
+import http from "./http";
 
-export function generarVistaPreviaPDF(payload) {
-  return axiosClient.post("/facturacion/preview", payload, {
-    responseType: "arraybuffer", // 👈 importante para PDF
-  });
-}
+export const generarVistaPreviaPDF = (payload) =>
+  http.post("/facturacion/preview", payload, { responseType: "arraybuffer" });

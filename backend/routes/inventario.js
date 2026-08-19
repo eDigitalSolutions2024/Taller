@@ -110,6 +110,36 @@ router.get('/', async (req, res) => {
 
 
 /**
+ * GET /api/inventario/:codigo/unidad
+ * Devuelve la unidad (Pieza/Caja/Litro/etc.) de la captura más reciente para
+ * ese código, usada por Salida Refacción para prellenar la unidad al agregar
+ * un renglón. Si no hay captura previa, responde unidad "Pieza" por defecto.
+ */
+router.get('/:codigo/unidad', async (req, res) => {
+  try {
+    const { codigo } = req.params;
+
+    const matchCodigo = isObjId(codigo)
+      ? { $or: [ { 'captura.codigoInterno': new mongoose.Types.ObjectId(codigo) }, { 'captura.codigoInterno': codigo } ] }
+      : { 'captura.codigoInterno': codigo };
+
+    const pipeline = [
+      { $unwind: '$captura' },
+      { $match: matchCodigo },
+      { $sort: { fechaFactura: -1 } },
+      { $limit: 1 },
+      { $project: { _id: 0, unidad: { $ifNull: ['$captura.unidad', 'Pieza'] } } },
+    ];
+
+    const [row] = await EntradaInventario.aggregate(pipeline);
+    res.json({ success: true, unidad: row?.unidad || 'Pieza' });
+  } catch (err) {
+    console.error('GET /inventario/:codigo/unidad error:', err);
+    res.status(500).json({ success: false, unidad: 'Pieza', message: err.message });
+  }
+});
+
+/**
  * GET /api/inventario/:codigo/historial
  * Devuelve el historial de compra (todas las partidas captura) para un producto.
  * :codigo puede ser un ObjectId (de Producto) o un string que guardaste en codigoInterno.

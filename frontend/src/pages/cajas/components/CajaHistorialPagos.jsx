@@ -1,0 +1,142 @@
+import React, { useState } from "react";
+import { formatFecha } from "../../../utils/fechas";
+
+function formatMoney(n) {
+  if (n === "" || n === null || n === undefined) return "-";
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 2,
+  }).format(Number(n) || 0);
+}
+
+const TIPO_PAGO_LABELS = { COMPLETO: "Pago Completo", ABONO: "Abono", ANTICIPO: "Anticipo" };
+
+// Una remisión a crédito se registra como Pago Completo (documenta la venta
+// completa), pero no entró dinero: en el historial se lee como Crédito.
+function tipoPagoLabel(p) {
+  if (p.comprobante === "REMISION" && p.remision?.tipo === "Credito") return "Crédito";
+  return TIPO_PAGO_LABELS[p.tipoPago] || p.tipoPago;
+}
+
+function comprobanteLabel(p) {
+  if (p.comprobante === "NOTA_VENTA") return `Nota Venta N°${p.notaVenta?.numero ?? "-"}`;
+  if (p.comprobante === "REMISION") return `Remisión N°${p.remision?.numero ?? "-"}`;
+  if (p.comprobante === "RECIBO_PROVISIONAL") return `Recibo Provisional N°${p.reciboProvisional?.numero ?? "-"}`;
+  return "-";
+}
+
+export default function CajaHistorialPagos({ pagos = [], onImprimir, onImprimirReciboProvisional, onImprimirReciboDolares, esAdmin = false, onCancelar }) {
+  const [filtro, setFiltro] = useState("TODOS");
+
+  const ordenados = [...pagos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const visibles = filtro === "TODOS" ? ordenados : ordenados.filter((p) => p.comprobante === filtro);
+
+  return (
+    <div>
+      <div className="d-flex justify-content-end mb-2">
+        <select
+          className="form-select form-select-sm"
+          style={{ width: "auto" }}
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+        >
+          <option value="TODOS">Todos los comprobantes</option>
+          <option value="NOTA_VENTA">Nota de Venta</option>
+          <option value="REMISION">Remisión</option>
+          <option value="RECIBO_PROVISIONAL">Recibo Provisional</option>
+        </select>
+      </div>
+
+      <div className="table-responsive mb-3">
+        <table className="table table-sm table-bordered align-middle">
+          <thead className="table-light text-center">
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Comprobante</th>
+              <th>Monto Pesos</th>
+              <th>Monto Dólares</th>
+              <th>T.C.</th>
+              <th>Monto Total (MN)</th>
+              <th>Referencia</th>
+              <th>Observaciones</th>
+              <th>Registrado por</th>
+              <th>Imprimir</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.length === 0 && (
+              <tr>
+                <td colSpan={11} className="text-center text-muted">
+                  No hay pagos registrados.
+                </td>
+              </tr>
+            )}
+            {visibles.map((p, idx) => (
+              <tr key={p._id || idx} className={p.cancelado ? "table-secondary text-decoration-line-through" : ""}>
+                <td className="text-center">{formatFecha(p.fecha)}</td>
+                <td className="text-center">{tipoPagoLabel(p)}</td>
+                <td className="text-center">
+                  {comprobanteLabel(p)}
+                  {p.cancelado && (
+                    <span className="badge bg-danger ms-1" title={p.motivoCancelacion || "Cancelado"}>
+                      Cancelado
+                    </span>
+                  )}
+                </td>
+                <td className="text-end">{formatMoney(p.montoPesos)}</td>
+                <td className="text-end">{p.montoDolares ? formatMoney(p.montoDolares) : "-"}</td>
+                <td className="text-end">{p.tipoCambio || "-"}</td>
+                <td className="text-end fw-bold">{formatMoney(p.monto)}</td>
+                <td>{p.referencia}</td>
+                <td>{p.observaciones}</td>
+                <td>{p.registradoPor}</td>
+                <td className="text-center">
+                  <div className="d-flex gap-1 justify-content-center">
+                    {(p.comprobante === "NOTA_VENTA" || p.comprobante === "REMISION") && (
+                      <button
+                        className="btn btn-outline-danger btn-sm"
+                        title={`Imprimir ${comprobanteLabel(p)}`}
+                        onClick={() => onImprimir?.(p)}
+                      >
+                        🖨️
+                      </button>
+                    )}
+                    {p.reciboProvisional?.numero && (
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        title={`Imprimir Recibo Provisional N°${p.reciboProvisional.numero}`}
+                        onClick={() => onImprimirReciboProvisional?.(p)}
+                      >
+                        🖨️ Prov.
+                      </button>
+                    )}
+                    {p.reciboDolares?.numero && (
+                      <button
+                        className="btn btn-outline-info btn-sm"
+                        title={`Imprimir Recibo de Dólares N°${p.reciboDolares.numero}`}
+                        onClick={() => onImprimirReciboDolares?.(p)}
+                      >
+                        🖨️ USD
+                      </button>
+                    )}
+                    {esAdmin && !p.cancelado && (
+                      <button
+                        className="btn btn-outline-danger btn-sm"
+                        title="Cancelar pago"
+                        onClick={() => onCancelar?.(p)}
+                      >
+                        🚫
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

@@ -122,13 +122,39 @@ function buildOperativoHtml(vehiculo, serviciosDocs = []) {
   const horaRecepcion =
     vehiculo.horaRecepcion || fmtHora(vehiculo.fechaRecepcion);
 
-  const direccionCompleta = fmtDireccionFull(direccion, {
+  // Nombre a mostrar: empresas/gobierno usan nombreGobierno; particulares
+  // componen nombre + apellidos (snapshot plano en la propia orden).
+  const nombreClienteCompleto =
+    nombreGobierno ||
+    [vehiculo.nombreCliente, vehiculo.apellidoPaterno, vehiculo.apellidoMaterno]
+      .filter(Boolean)
+      .join(' ');
+
+  const correoCliente =
+    (Array.isArray(vehiculo.correos) && vehiculo.correos.filter(Boolean).join(', ')) ||
+    correo ||
+    '';
+
+  const telefonoCliente =
+    [vehiculo.telefonoFijoLada, telefonoFijo].filter(Boolean).join(' ') ||
+    [vehiculo.celularLada, celular].filter(Boolean).join(' ') ||
+    '';
+
+  const asesorNombre = vehiculo.creadoPor || 'admin';
+
+  const direccionBase = fmtDireccionFull(direccion, {
     numeroExt,
     numeroInt,
     colonia,
     ciudad,
     estado,
   });
+  // Si direccion venía como string (solo la calle), anexar el resto de los
+  // campos planos para que la dirección salga completa en el PDF.
+  const direccionCompleta =
+    typeof direccion === 'string' && direccion
+      ? [direccion, numeroExt, numeroInt, colonia, ciudad, estado].filter(Boolean).join(' ')
+      : direccionBase;
 
   // --- Servicios dinámicos desde la BD ---
   // serviciosDocs viene de Mongo: [{codigo, descripcion, grupoServicio, ...}]
@@ -285,7 +311,7 @@ function buildOperativoHtml(vehiculo, serviciosDocs = []) {
         </div>
       </td>
       <td style="width: 40mm; text-align: right; font-size: 9px; vertical-align: top;">
-        <div class="small"><span class="label">ASESOR:</span> admin</div>
+        <div class="small"><span class="label">ASESOR:</span> ${esc(asesorNombre)}</div>
       </td>
     </tr>
   </table>
@@ -294,7 +320,7 @@ function buildOperativoHtml(vehiculo, serviciosDocs = []) {
   <table style="margin-top: 4px;">
     <tr>
       <td class="grey-header" style="width: 23%;">NOMBRE DEL CLIENTE:</td>
-      <td style="width: 47%;">${esc(nombreGobierno)}</td>
+      <td style="width: 47%;">${esc(nombreClienteCompleto)}</td>
       <td class="orden-label" style="width: 15%;">ORDEN DE SERVICIO:</td>
       <td class="orden-label" style="width: 15%;"><span class="orden-num">${esc(
         ordenServicio
@@ -304,13 +330,13 @@ function buildOperativoHtml(vehiculo, serviciosDocs = []) {
       <td class="grey-header">FECHA DE RECEPCIÓN:</td>
       <td>${esc(fechaRecepcion)} A LAS ${esc(horaRecepcion)} hrs</td>
       <td class="grey-header">CORREO</td>
-      <td>${esc(correo)}</td>
+      <td>${esc(correoCliente)}</td>
     </tr>
     <tr>
       <td class="grey-header">RFC:</td>
       <td>${esc(rfc)}</td>
       <td class="grey-header">TELÉFONO</td>
-      <td>${esc(telefonoFijo || celular || '')}</td>
+      <td>${esc(telefonoCliente)}</td>
     </tr>
     <tr>
       <td class="grey-header">DIRECCIÓN:</td>
@@ -510,7 +536,10 @@ function buildOperativoHtml(vehiculo, serviciosDocs = []) {
 
 // ---------- FUNCIÓN PRINCIPAL PARA STREAM ----------
 
-async function streamVehiculoOperativoPdf(res, vehiculo) {
+const FORMATO_PAPEL = { a4: 'A4', carta: 'Letter', oficio: 'Legal' };
+
+async function streamVehiculoOperativoPdf(res, vehiculo, opts = {}) {
+  const formatoPdf = FORMATO_PAPEL[opts.papel] || 'A4';
   const servicioReparacion = vehiculo.servicioReparacion || {};
   const codigosSel = servicioReparacion.serviciosSeleccionados || [];
 
@@ -534,7 +563,7 @@ async function streamVehiculoOperativoPdf(res, vehiculo) {
   await page.setContent(html, { waitUntil: 'networkidle0' });
 
   const pdfBuffer = await page.pdf({
-    format: 'A4',
+    format: formatoPdf,
     printBackground: true,
     margin: { top: '5mm', bottom: '5mm', left: '5mm', right: '5mm' },
   });

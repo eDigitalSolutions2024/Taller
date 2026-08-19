@@ -35,6 +35,8 @@ const EntradaInventarioSchema = new mongoose.Schema({
 
   // === Arreglo con los renglones de la tabla ===
   captura: { type: [CapturaSchema], default: [] },
+
+  estado: { type: String, enum: ['borrador', 'finalizada'], default: 'borrador' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('EntradaInventario', EntradaInventarioSchema);

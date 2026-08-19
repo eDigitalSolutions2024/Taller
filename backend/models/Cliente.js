@@ -92,6 +92,15 @@ const ClienteSchema = new Schema(
     email: { type: String, trim: true, lowercase: true },
     telefono: { type: TelefonoSchema, default: undefined },
     celular: { type: TelefonoSchema, default: undefined },
+    // Listas completas (el primer elemento espeja email/telefono/celular de
+    // arriba, para no romper a quien todavía lee el campo singular).
+    emails: { type: [String], default: undefined },
+    telefonos: { type: [TelefonoSchema], default: undefined },
+    celulares: { type: [TelefonoSchema], default: undefined },
+    pais: { type: String, trim: true, default: "México" },
+    // Controla si se piden/muestran RFC, régimen fiscal, etc. Por defecto
+    // true en documentos ya existentes con RFC capturado (ver pre-validate).
+    requiereFacturacion: { type: Boolean, default: false },
 
     // Fiscal/ubicación comunes
     rfc: { type: String, trim: true, uppercase: true },
@@ -113,6 +122,7 @@ const ClienteSchema = new Schema(
     asesorResponsable: { type: String, trim: true },
     condicionesPago: { type: String, trim: true },
     observaciones: { type: String, trim: true },
+    esEmpleado: { type: Boolean, default: false },
 
     // Ramas por tipo
     empresa: { type: EmpresaSchema, default: undefined },   // Privada / Arrendadora
@@ -140,6 +150,13 @@ ClienteSchema.index({
 ClienteSchema.pre("save", function (next) {
   if (this.rfc) this.rfc = String(this.rfc).toUpperCase().trim();
   if (this.email) this.email = String(this.email).toLowerCase().trim();
+
+  // El primer elemento de cada lista espeja el campo singular, para que
+  // pantallas que todavía leen email/telefono/celular directo (p. ej. al
+  // prellenar una orden nueva) sigan viendo el dato principal.
+  if (this.emails?.length) this.email = this.emails[0] || this.email;
+  if (this.telefonos?.length) this.telefono = this.telefonos[0] || this.telefono;
+  if (this.celulares?.length) this.celular = this.celulares[0] || this.celular;
 
   // Si facturación “mismaQueDireccion” y no hay dirección copiada, duplica
   if (

@@ -1,8 +1,25 @@
 // src/pages/vehiculo/VehiculoNuevoForm.jsx
 import React, { useEffect, useState } from "react";
-import { createVehiculo, updateDatosOrden } from "../../api/vehiculos";
+import { createVehiculo, updateDatosOrden, descartarImagenesTemp } from "../../api/vehiculos";
+import { getFolioOrdenServicio } from "../../api/configuracion";
+import { searchGarageVehiculos, upsertGarageVehiculo } from "../../api/garage";
 import VehicleDamageCanvas from "../../components/VehicleDamageCanvas";
+import ImagenesOrden from "../../components/ImagenesOrden";
 import { getUser } from "../../auth";
+
+// Identificador de la sesión de imágenes subidas antes de guardar la orden
+// (ver ImagenesOrden). Solo sirve para nombrar una carpeta temporal en el
+// servidor, no requiere aleatoriedad criptográfica.
+function generarUUID() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 function generateOrdenServicio() {
   const ahora = new Date();
@@ -22,6 +39,20 @@ function getCurrentInputTime() {
   const ahora = new Date();
   return `${String(ahora.getHours()).padStart(2,"0")}:${String(ahora.getMinutes()).padStart(2,"0")}`;
 }
+function nombreClienteGarage(c) {
+  if (!c) return "";
+  if (c.gobierno?.nombreGobierno) return c.gobierno.nombreGobierno;
+  // apellidoPaterno es de "Particular"; en empresas/gobierno no se concatena
+  // porque en registros migrados/viejos puede quedar huérfano.
+  if (c.tipoCliente && c.tipoCliente !== "Particular") {
+    return c.nombre || c.empresa?.contacto?.nombre || "";
+  }
+  return (
+    [c.nombre, c.apellidoPaterno].filter(Boolean).join(" ") ||
+    c.empresa?.contacto?.nombre ||
+    ""
+  );
+}
 function formatDateForInput(value) {
   if (!value) return "";
   if (typeof value === "string") {
@@ -33,9 +64,13 @@ function formatDateForInput(value) {
   return `${fecha.getFullYear()}-${String(fecha.getMonth()+1).padStart(2,"0")}-${String(fecha.getDate()).padStart(2,"0")}`;
 }
 
-export default function VehiculoNuevoForm({ cliente, initialData, readOnly = false, onCreated }) {
+export default function VehiculoNuevoForm({ cliente, initialData, readOnly = false, onCreated, sinVehiculo = false, prefillVehiculo = null, garantiaSolicitud = null, puedeEditar = null }) {
   const esParticular    = cliente?.tipoCliente === "Particular";
   const requiereFactura = cliente?.requiereFacturacion === true;
+  // Los datos del vehículo solo son obligatorios al crear una orden nueva con
+  // vehículo; no se exigen al editar órdenes viejas/incompletas ni cuando la
+  // orden es "Sin Vehículo".
+  const requiereDatosVehiculo = !initialData?._id && !sinVehiculo;
 
   const [form, setForm] = useState({
     // ── Cabecera ──────────────────────────────────────────
@@ -69,8 +104,6 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     codigoPostal:     "",
     ciudad:           "",
     estado:           "",
-    formaPago:        "",
-    metodoPago:       "",
 
     // ── Vehículo ──────────────────────────────────────────
     nombreUsuarioDejaVehiculo: "",
@@ -130,6 +163,7 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     nivelGasolina:        false,
     danoVehiculo:         null,
     fotosVehiculo:        [],   // fotos subidas del vehículo
+    imagenes:             [],   // fotografías generales de la orden (archivo en disco)
 
     // ── A) Llantas ────────────────────────────────────────
     llantaMedida:          "",
@@ -222,21 +256,92 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
   const [guardando, setGuardando] = useState(false);
   const [guardado,  setGuardado]  = useState(false);
 
+  // Autocompletado de Serie (VIN) contra el catálogo del Garaje
+  const [serieResultados, setSerieResultados] = useState([]);
+  const [mostrarSerieDropdown, setMostrarSerieDropdown] = useState(false);
+  const serieTimerRef = React.useRef(null);
+
+  // Identifica la carpeta temporal de imágenes subidas antes de guardar la
+  // orden (modo creación); se genera una sola vez por instancia del formulario.
+  const tempIdImagenesRef = React.useRef(null);
+  if (!tempIdImagenesRef.current) tempIdImagenesRef.current = generarUUID();
+  const imagenesOrdenRef = React.useRef(null);
+
+  // Si el formulario se abandona sin guardar la orden (se desmonta), se
+  // descartan las imágenes que se hayan subido de forma temporal; si la
+  // orden sí se guarda, esa carpeta temporal ya fue migrada y esta llamada
+  // simplemente no encuentra nada que borrar. Si al desmontar todavía hay
+  // una subida en curso, se espera a que termine antes de borrar: si se
+  // borrara primero, la subida en curso recrearía la carpeta después y esa
+  // imagen quedaría huérfana en disco hasta la purga de 24h.
+  useEffect(() => {
+    const eraCreacion = !initialData?._id;
+    const imagenesOrden = imagenesOrdenRef.current;
+    return () => {
+      if (!eraCreacion) return;
+      const tempId = tempIdImagenesRef.current;
+      const pendiente = imagenesOrden?.esperarSubidasPendientes?.() ?? Promise.resolve();
+      Promise.resolve(pendiente)
+        .catch(() => {})
+        .finally(() => descartarImagenesTemp(tempId));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const isAdmin        = getUser()?.role === "admin";
+  // Quién puede activar el modo edición desde la vista de solo lectura: por
+  // defecto solo admin (compatibilidad hacia atrás); el caller puede ampliarlo
+  // (p. ej. también el usuario que creó la orden) pasando puedeEditar.
+  const puedeEditarForm = puedeEditar !== null ? puedeEditar : isAdmin;
   const [editandoAdmin, setEditandoAdmin] = useState(false);
-  const efectivoReadOnly = readOnly && !(isAdmin && editandoAdmin);
+  const efectivoReadOnly = readOnly && !(puedeEditarForm && editandoAdmin);
 
   // ── Montar sin initialData ────────────────────────────
+  // El folio de Orden de Servicio se deja en blanco a propósito: si el
+  // usuario no captura uno manualmente, el backend le asigna el siguiente
+  // consecutivo real (ver GET /configuracion/folio-orden-servicio y
+  // generarOrdenServicio en routes/vehiculos.js) de forma atómica. Antes se
+  // pre-llenaba aquí con un folio tipo fecha-hora (generateOrdenServicio) que
+  // el usuario normalmente dejaba tal cual, produciendo folios como
+  // "OS-20260818-152102" en vez del consecutivo limpio "OS-00011".
+  const [folioSugerido, setFolioSugerido] = useState("");
   useEffect(() => {
     if (!initialData) {
       setForm((prev) => ({
         ...prev,
-        ordenServicio:  generateOrdenServicio(),
         fechaRecepcion: getTodayInputDate(),
         horaRecepcion:  getCurrentInputTime(),
       }));
+      getFolioOrdenServicio()
+        .then((data) => setFolioSugerido(data?.proximoFolio || ""))
+        .catch(() => setFolioSugerido(generateOrdenServicio()));
     }
   }, [initialData]);
+
+  // ── Precarga desde el Garaje (vehículo ya conocido de este cliente) ──
+  useEffect(() => {
+    if (initialData || !prefillVehiculo) return;
+    setForm((prev) => ({
+      ...prev,
+      marca:           prefillVehiculo.marca           || "",
+      modelo:          prefillVehiculo.modelo          || "",
+      anio:            prefillVehiculo.anio            || "",
+      color:           prefillVehiculo.color           || "",
+      serie:           prefillVehiculo.serie           || "",
+      puertas:         prefillVehiculo.puertas         || "",
+      placas:          prefillVehiculo.placas          || "",
+      kmsMillas:       prefillVehiculo.kmsMillas       || "",
+      nacionalidad:    prefillVehiculo.nacionalidad    || "",
+      motor:           prefillVehiculo.motor           || "",
+      numeroEconomico: prefillVehiculo.numeroEconomico || "",
+      traccion:        prefillVehiculo.traccion        || "",
+      transmision:     prefillVehiculo.transmision     || "",
+      cilindros:       prefillVehiculo.cilindros       || "",
+      combustion:      prefillVehiculo.combustion      || "",
+      seguroRines:     prefillVehiculo.seguroRines     || "",
+      llavesControl:   prefillVehiculo.llavesControl   || "",
+    }));
+  }, [initialData, prefillVehiculo]);
 
   // ── Precarga cliente ──────────────────────────────────
   useEffect(() => {
@@ -296,13 +401,65 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
+  // Mientras se captura la Serie, busca (con debounce) coincidencias en el
+  // Garaje para prellenar el resto de los datos del vehículo.
+  const handleSerieChange = (e) => {
+    if (efectivoReadOnly) return;
+    const value = e.target.value;
+    setForm((prev) => ({ ...prev, serie: value }));
+
+    if (serieTimerRef.current) clearTimeout(serieTimerRef.current);
+    const term = value.trim();
+    if (term.length < 1) {
+      setSerieResultados([]);
+      setMostrarSerieDropdown(false);
+      return;
+    }
+    serieTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await searchGarageVehiculos(term);
+        setSerieResultados(res.data?.data || []);
+        setMostrarSerieDropdown(true);
+      } catch (err) {
+        console.error("Error buscando en el garaje:", err);
+      }
+    }, 300);
+  };
+
+  const seleccionarVehiculoSerie = (v) => {
+    setForm((prev) => ({
+      ...prev,
+      marca: v.marca || prev.marca,
+      modelo: v.modelo || prev.modelo,
+      anio: v.anio || prev.anio,
+      color: v.color || prev.color,
+      serie: v.serie || prev.serie,
+      puertas: v.puertas || prev.puertas,
+      placas: v.placas || prev.placas,
+      kmsMillas: v.kmsMillas || prev.kmsMillas,
+      nacionalidad: v.nacionalidad || prev.nacionalidad,
+      motor: v.motor || prev.motor,
+      numeroEconomico: v.numeroEconomico || prev.numeroEconomico,
+      traccion: v.traccion || prev.traccion,
+      transmision: v.transmision || prev.transmision,
+      cilindros: v.cilindros || prev.cilindros,
+      combustion: v.combustion || prev.combustion,
+      seguroRines: v.seguroRines || prev.seguroRines,
+      llavesControl: v.llavesControl || prev.llavesControl,
+    }));
+    setMostrarSerieDropdown(false);
+    setSerieResultados([]);
+  };
+
   // ── Submit ────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (efectivoReadOnly || guardando || guardado) return;
 
-    // Separar archivos pesados del payload principal
-    const { fotosVehiculo, danoVehiculo, ...formDatos } = form;
+    // Separar archivos pesados / campos administrados aparte del payload principal.
+    // Las imágenes de la orden (ImagenesOrden) se suben directo a disco y nunca
+    // se aceptan crudas en este payload; en creación se migran vía tempId.
+    const { fotosVehiculo, danoVehiculo, imagenes, ...formDatos } = form;
 
     const payload = {
       ...formDatos,
@@ -342,12 +499,45 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     }
 
     if (!cliente?._id) { alert("No hay cliente seleccionado."); return; }
-    if (!form.ordenServicio.trim()) { alert("El número de Orden de Servicio es obligatorio."); return; }
+    // Si se deja en blanco, el backend asigna el siguiente consecutivo real.
+
+    if (sinVehiculo) payload.sinVehiculo = true;
+    if (garantiaSolicitud?.ordenAnteriorId) payload.garantiaSolicitud = garantiaSolicitud;
+    payload.creadoPor = getUser()?.name || "";
+    // Migra a la carpeta definitiva las imágenes que se hayan subido antes
+    // de guardar la orden (ver ImagenesOrden / tempIdImagenesRef).
+    payload.tempId = tempIdImagenesRef.current;
 
     try {
       setGuardando(true);
       const res = await createVehiculo(cliente._id, payload);
       setGuardado(true);
+
+      // Mantiene el catálogo del Garaje al día automáticamente (silencioso:
+      // si falla no debe bloquear la creación de la orden, ya se guardó).
+      if (form.serie?.trim()) {
+        upsertGarageVehiculo({
+          serie: form.serie,
+          marca: form.marca,
+          modelo: form.modelo,
+          anio: form.anio,
+          color: form.color,
+          puertas: form.puertas,
+          placas: form.placas,
+          kmsMillas: form.kmsMillas,
+          nacionalidad: form.nacionalidad,
+          motor: form.motor,
+          numeroEconomico: form.numeroEconomico,
+          traccion: form.traccion,
+          transmision: form.transmision,
+          cilindros: form.cilindros,
+          combustion: form.combustion,
+          seguroRines: form.seguroRines,
+          llavesControl: form.llavesControl,
+          clienteId: cliente._id,
+        }).catch((err) => console.error("Error actualizando el garaje:", err));
+      }
+
       if (onCreated) onCreated(res.data?.vehiculo || res.data);
     } catch (err) {
       alert(err?.response?.data?.msg || "Error al guardar el vehículo.");
@@ -386,13 +576,23 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
     <div className="card mt-3">
       <div className="card-header fw-bold">Datos del Cliente</div>
       <div className="card-body">
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === "Enter" && e.target.type !== "submit") e.preventDefault(); }}>
 
           {/* ====== CABECERA ====== */}
           <div className="row g-2 mb-2">
             <div className="col-md-4">
               <label className="form-label">Orden de Servicio</label>
-              <input type="text" className="form-control" name="ordenServicio" value={form.ordenServicio} onChange={handleChange} required />
+              <input
+                type="text"
+                className="form-control"
+                name="ordenServicio"
+                value={form.ordenServicio}
+                onChange={handleChange}
+                placeholder={initialData ? "" : `Automático (${folioSugerido || "..."})`}
+              />
+              {!initialData && (
+                <div className="form-text">Déjalo en blanco para que se asigne el consecutivo automático.</div>
+              )}
             </div>
             <div className="col-md-4">
               <label className="form-label">Fecha Recepción</label>
@@ -415,10 +615,9 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                     <div className="col-12"><label className="form-label">Apellido Paterno</label><input type="text" className="form-control" name="apellidoPaterno" value={form.apellidoPaterno} onChange={handleChange} /></div>
                     <div className="col-12"><label className="form-label">Apellido Materno</label><input type="text" className="form-control" name="apellidoMaterno" value={form.apellidoMaterno} onChange={handleChange} /></div>
                   </>
-                ) : cliente?.tipoCliente === "Empresa Privada" ? (
+                ) : (cliente?.tipoCliente === "Empresa Privada" || cliente?.tipoCliente === "Empresa Arrendadora") ? (
                   <>
                     <div className="col-12"><label className="form-label">Nombre Empresa</label><input type="text" className="form-control" name="nombreGobierno" value={form.nombreGobierno} onChange={handleChange} /></div>
-                    <div className="col-12"><label className="form-label">Nombre Contacto Empresa</label><input type="text" className="form-control" name="nombreContactoGobierno" value={form.nombreContactoGobierno} onChange={handleChange} /></div>
                   </>
                 ) : (
                   <>
@@ -457,37 +656,18 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                   </>
                 )}
 
-                {/* Forma / Método de Pago */}
-                <div className="col-md-6">
-                  <label className="form-label">Forma de Pago</label>
-                  <select className="form-select" name="formaPago" value={form.formaPago} onChange={handleChange} disabled={efectivoReadOnly}>
-                    <option value="">-- Seleccionar --</option>
-                    <option value="Efectivo">Efectivo</option>
-                    <option value="Tarjeta">Tarjeta</option>
-                    <option value="Transferencia">Transferencia</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Otros">Otros</option>
-                  </select>
-                </div>
-                <div className="col-md-6">
-                  <label className="form-label">Método de Pago</label>
-                  <select className="form-select" name="metodoPago" value={form.metodoPago} onChange={handleChange} disabled={efectivoReadOnly}>
-                    <option value="">-- Seleccionar --</option>
-                    <option value="PUE">PUE - Pago en una sola exhibición</option>
-                    <option value="PPD">PPD - Pago en parcialidades o diferido</option>
-                  </select>
-                </div>
-
                 {/* Grua */}
-                <div className="col-12">
-                  <label className="form-label">Grua</label>
-                  <select className="form-select" name="grua" value={form.grua} onChange={handleChange} disabled={efectivoReadOnly}>
-                    <option value="">Select an Option</option>
-                    <option value="SI">SI</option>
-                    <option value="NO">NO</option>
-                  </select>
-                </div>
-                {form.grua === "SI" && (
+                {!sinVehiculo && (
+                  <div className="col-12">
+                    <label className="form-label">Grua</label>
+                    <select className="form-select" name="grua" value={form.grua} onChange={handleChange} disabled={efectivoReadOnly}>
+                      <option value="">Select an Option</option>
+                      <option value="SI">SI</option>
+                      <option value="NO">NO</option>
+                    </select>
+                  </div>
+                )}
+                {!sinVehiculo && form.grua === "SI" && (
                   <div className="col-12">
                     <label className="form-label">Precio de la grúa</label>
                     <input type="number" step="0.01" className="form-control" name="precioGrua" value={form.precioGrua} onChange={handleChange} placeholder="Ej. 800.00" />
@@ -497,20 +677,53 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
             </div>
 
             {/* ── COLUMNA DER: VEHÍCULO ── */}
+            {!sinVehiculo && (
             <div className="col-md-6">
               <div className="row g-2">
-                <div className="col-12"><label className="form-label">Nombre Usuario Deja Vehículo</label><input type="text" className="form-control" name="nombreUsuarioDejaVehiculo" value={form.nombreUsuarioDejaVehiculo} onChange={handleChange} /></div>
+                <div className="col-12"><label className="form-label">Nombre Usuario Deja Vehículo{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="nombreUsuarioDejaVehiculo" value={form.nombreUsuarioDejaVehiculo} onChange={handleChange} required={requiereDatosVehiculo} /></div>
 
-                <div className="col-md-6"><label className="form-label">Marca</label><input type="text" className="form-control" name="marca" value={form.marca} onChange={handleChange} /></div>
-                <div className="col-md-6"><label className="form-label">Modelo</label><input type="text" className="form-control" name="modelo" value={form.modelo} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Marca{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="marca" value={form.marca} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-6"><label className="form-label">Modelo{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="modelo" value={form.modelo} onChange={handleChange} required={requiereDatosVehiculo} /></div>
 
-                <div className="col-md-3"><label className="form-label">Año</label><input type="text" className="form-control" name="anio" value={form.anio} onChange={handleChange} /></div>
-                <div className="col-md-3"><label className="form-label">Color</label><input type="text" className="form-control" name="color" value={form.color} onChange={handleChange} /></div>
-                <div className="col-md-3"><label className="form-label">Serie (VIN)</label><input type="text" className="form-control" name="serie" value={form.serie} onChange={handleChange} /></div>
+                <div className="col-md-3"><label className="form-label">Año{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="anio" value={form.anio} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-3"><label className="form-label">Color{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="color" value={form.color} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-3 position-relative">
+                  <label className="form-label">Serie (VIN){requiereDatosVehiculo && <span className="text-danger">*</span>}</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="serie"
+                    value={form.serie}
+                    onChange={handleSerieChange}
+                    onFocus={() => { if (serieResultados.length) setMostrarSerieDropdown(true); }}
+                    onBlur={() => setTimeout(() => setMostrarSerieDropdown(false), 150)}
+                    required={requiereDatosVehiculo}
+                    autoComplete="off"
+                  />
+                  {mostrarSerieDropdown && serieResultados.length > 0 && (
+                    <ul className="list-group position-absolute w-100 shadow-sm" style={{ zIndex: 20, maxHeight: 220, overflowY: "auto" }}>
+                      {serieResultados.map((v) => (
+                        <li
+                          key={v._id}
+                          className="list-group-item list-group-item-action"
+                          style={{ cursor: "pointer", fontSize: "0.85rem" }}
+                          onMouseDown={() => seleccionarVehiculoSerie(v)}
+                        >
+                          <strong>{v.serie}</strong> — {[v.marca, v.modelo, v.anio].filter(Boolean).join(" ")}
+                          {v.placas ? ` · ${v.placas}` : ""}
+                          <br />
+                          <span className="text-muted">
+                            {v.clientes?.[0] ? nombreClienteGarage(v.clientes[0]) : "Sin cliente"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 <div className="col-md-3"><label className="form-label">Puertas</label><input type="text" className="form-control" name="puertas" value={form.puertas} onChange={handleChange} placeholder="2 / 4" /></div>
 
-                <div className="col-md-6"><label className="form-label">Placas</label><input type="text" className="form-control" name="placas" value={form.placas} onChange={handleChange} /></div>
-                <div className="col-md-6"><label className="form-label">KMS/Millas</label><input type="text" className="form-control" name="kmsMillas" value={form.kmsMillas} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Placas{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="placas" value={form.placas} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-6"><label className="form-label">KMS/Millas{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="kmsMillas" value={form.kmsMillas} onChange={handleChange} required={requiereDatosVehiculo} /></div>
 
                 {/* Transmisión */}
                 <div className="col-md-4">
@@ -563,9 +776,9 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                   </select>
                 </div>
 
-                <div className="col-md-6"><label className="form-label">Nacionalidad</label><input type="text" className="form-control" name="nacionalidad" value={form.nacionalidad} onChange={handleChange} /></div>
-                <div className="col-md-6"><label className="form-label">Motor</label><input type="text" className="form-control" name="motor" value={form.motor} onChange={handleChange} /></div>
-                <div className="col-md-6"><label className="form-label">Número Económico</label><input type="text" className="form-control" name="numeroEconomico" value={form.numeroEconomico} onChange={handleChange} /></div>
+                <div className="col-md-6"><label className="form-label">Nacionalidad{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="nacionalidad" value={form.nacionalidad} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-6"><label className="form-label">Motor{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="motor" value={form.motor} onChange={handleChange} required={requiereDatosVehiculo} /></div>
+                <div className="col-md-6"><label className="form-label">Número Económico{requiereDatosVehiculo && <span className="text-danger">*</span>}</label><input type="text" className="form-control" name="numeroEconomico" value={form.numeroEconomico} onChange={handleChange} required={requiereDatosVehiculo} /></div>
 
                 <div className="col-md-6">
                   <label className="form-label">Correo(s)</label>
@@ -575,8 +788,8 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                 </div>
 
                 <div className="col-12">
-                  <label className="form-label">Tracción</label>
-                  <select className="form-select" name="traccion" value={form.traccion} onChange={handleChange} disabled={efectivoReadOnly}>
+                  <label className="form-label">Tracción{requiereDatosVehiculo && <span className="text-danger">*</span>}</label>
+                  <select className="form-select" name="traccion" value={form.traccion} onChange={handleChange} disabled={efectivoReadOnly} required={requiereDatosVehiculo}>
                     <option value="">Select an Option</option>
                     <option value="4x2">4x2</option>
                     <option value="4x4">4x4</option>
@@ -585,6 +798,7 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                 </div>
               </div>
             </div>
+            )}
           </div>
 
           {/* ====== ACCESORIOS ====== */}
@@ -645,6 +859,16 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                   onPhotosChange={(fotos) => setForm((prev) => ({ ...prev, fotosVehiculo: fotos }))}
                   readOnly={efectivoReadOnly}
                 />
+
+              <div className="fw-semibold mb-1 mt-3" style={{fontSize:"13px"}}>Fotografías de la orden</div>
+              <ImagenesOrden
+                ref={imagenesOrdenRef}
+                ordenId={initialData?._id}
+                tempId={initialData?._id ? undefined : tempIdImagenesRef.current}
+                imagenes={form.imagenes || []}
+                onChange={(nuevasImagenes) => setForm((prev) => ({ ...prev, imagenes: nuevasImagenes }))}
+                readOnly={efectivoReadOnly}
+              />
             </div>
 
             {/* Gasolina */}
@@ -728,10 +952,10 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                 {guardando?"Guardando...":guardado?"Guardado":"Guardar"}
               </button>
             )}
-            {readOnly && isAdmin && !editandoAdmin && (
+            {readOnly && puedeEditarForm && !editandoAdmin && (
               <button type="button" className="btn btn-warning px-5" onClick={() => setEditandoAdmin(true)}>Editar</button>
             )}
-            {readOnly && isAdmin && editandoAdmin && (
+            {readOnly && puedeEditarForm && editandoAdmin && (
               <div className="d-flex gap-2">
                 <button type="submit" className="btn btn-success px-5" disabled={guardando}>{guardando?"Guardando...":"Guardar cambios"}</button>
                 <button type="button" className="btn btn-secondary px-4" disabled={guardando} onClick={() => setEditandoAdmin(false)}>Cancelar</button>

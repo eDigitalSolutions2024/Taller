@@ -130,6 +130,8 @@ export default function SolicitudesTaller() {
                     <th>Cliente</th>
                     <th>Vehículo</th>
                     <th>Placas</th>
+                    <th>Solicitante</th>
+                    <th>Refaccionario</th>
                     <th>Refacciones</th>
                     <th>Fecha Solicitud</th>
                     <th>Tiempo</th>
@@ -140,7 +142,7 @@ export default function SolicitudesTaller() {
                 <tbody>
                   {ordenes.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="text-center text-muted">
+                      <td colSpan={10} className="text-center text-muted">
                         No hay solicitudes pendientes de refaccionaria.
                       </td>
                     </tr>
@@ -155,6 +157,8 @@ export default function SolicitudesTaller() {
                       <td>{nombreCliente(orden)}</td>
                       <td>{descripcionVehiculo(orden)}</td>
                       <td>{orden.placas || "-"}</td>
+                      <td>{orden.creadoPor || "-"}</td>
+                      <td>{orden.devueltoPor || "-"}</td>
                       <td>{orden.refaccionesSolicitadas?.length || 0}</td>
                       <td>
                         {orden.fechaSolicitudRefacciones

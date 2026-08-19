@@ -1,60 +1,201 @@
 // src/pages/vehiculo/VehiculoOrdenDetalle.jsx
-import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import {
-  getVehiculoById,
-  getEmpleados,
-  openOperativoPdf,
-  openImprimirPdf,
-} from "../../api/vehiculos";
+import React, { useCallback, useEffect, useState } from "react";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { getVehiculoById, openOperativoPdf } from "../../api/vehiculos";
+import { getUser } from "../../auth";
 import VehiculoNuevoForm from "./VehiculoNuevoForm";
 import ServicioReparacionTab from "./ServicioReparacionTab";
 import VehiculoRequisicionDiagnostico from "./VehiculoRequisicionDiagnostico";
 import VehiculoPresupuestoVenta from "./VehiculoPresupuestoVenta";
+import VehiculoReparacionEnCurso from "./VehiculoReparacionEnCurso";
 import VehiculoOrdenGeneral from "./VehiculoOrdenGeneral";
+
+// PENDIENTE_AUTORIZACION_CLIENTE va al tab req (el asesor selecciona opciones),
+// el tab de presupuesto solo se habilita al pulsar "Continuar a Presupuesto"
+const ESTADO_TO_TAB = {
+  INGRESO:                        "servicio",
+  PENDIENTE_REFACCIONARIA:        "req",
+  PENDIENTE_AUTORIZACION_CLIENTE: "req",
+  PENDIENTE_SURTIR:               "presupuesto",
+  REPARACION_EN_CURSO:            "reparacion",
+  PENDIENTE_CIERRE:               "general",
+  PENDIENTE_CERRAR:               "general",
+  CERRADA:                        "general",
+  CANCELADA:                      "general",
+};
+
+const TAB_STEP = { datos: 0, servicio: 1, req: 2, presupuesto: 3, reparacion: 4, general: 5 };
+const ESTADO_STEP = {
+  INGRESO:                        0,
+  PENDIENTE_REFACCIONARIA:        2,
+  PENDIENTE_AUTORIZACION_CLIENTE: 3,
+  PENDIENTE_SURTIR:               3,
+  REPARACION_EN_CURSO:            4,
+  PENDIENTE_CIERRE:               5,
+  PENDIENTE_CERRAR:               5,
+  CERRADA:                        5,
+  CANCELADA:                      5,
+};
+
+// Estados donde el presupuesto siempre es accesible (sin necesitar el botón)
+const ESTADOS_PRESUPUESTO_SIEMPRE = [
+  "PENDIENTE_SURTIR",
+  "PENDIENTE_CIERRE",
+  "PENDIENTE_CERRAR",
+  "REPARACION_EN_CURSO",
+];
+
+const ESTADOS_PREPARACION = ["REPARACION_EN_CURSO", "PENDIENTE_CIERRE", "PENDIENTE_CERRAR", "CERRADA"];
 
 export default function VehiculoOrdenDetalle() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [orden, setOrden] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("datos");
-  const [ordenIniciada, setOrdenIniciada] = useState(false);
-  const [empleados, setEmpleados] = useState([]);
+  const tabFromUrl = searchParams.get("tab");
+  const [tab, setTab] = useState(tabFromUrl || "datos");
 
-  // Lógica de bloqueo centralizada
-  const isClosed = orden?.estadoOrden === "CERRADA";
+  // Cambia el tab y persiste en la URL para que el refresh restaure el tab
+  // correcto. También refresca la orden: si alguien más la cerró/restableció
+  // mientras esta pestaña estaba abierta, el estado y los permisos de edición
+  // quedarían obsoletos.
+  const changeTab = useCallback((newTab) => {
+    setTab(newTab);
+    navigate(`?tab=${newTab}`, { replace: true });
+    getVehiculoById(id)
+      .then((res) => setOrden(res.data.vehiculo))
+      .catch((err) => console.error("Error al refrescar la orden:", err));
+  }, [navigate, id]);
+
+  // El tab de presupuesto se desbloquea cuando el asesor pulsa "Continuar a
+  // Presupuesto" o cuando el presupuesto ya fue guardado anteriormente.
+  const [presupuestoDesbloqueado, setPresupuestoDesbloqueado] = useState(false);
+
+  const ordenIniciada = !!orden?.ordenIniciada;
+
+  const presupuestoHabilitado =
+    ordenIniciada &&
+    (ESTADOS_PRESUPUESTO_SIEMPRE.includes(orden?.estadoOrden) || presupuestoDesbloqueado);
+
+  const reparacionHabilitada = ESTADOS_PREPARACION.includes(orden?.estadoOrden);
+
+  const esCerrada = orden?.estadoOrden === "CERRADA";
+  const esCancelada = orden?.estadoOrden === "CANCELADA";
+
+  // Solo el admin puede editar órdenes de otros usuarios; el dueño (quien la
+  // creó) puede editar la suya mientras no esté cerrada/cancelada.
+  const usuario = getUser();
+  const miNombre = usuario?.name || "";
+  const esAdmin = usuario?.role === "admin";
+  const esPropia = orden?.creadoPor === miNombre;
+  const soloConsulta = !esAdmin && !esPropia;
+  const soloLectura = esCerrada || esCancelada || soloConsulta;
+
+  const currentStep = ESTADO_STEP[orden?.estadoOrden] ?? 0;
+  const isPast = (tabKey) => (!orden ? false : TAB_STEP[tabKey] < currentStep);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError("");
-
-        const resOrden = await getVehiculoById(id);
-        const v = resOrden.data.vehiculo;
+        const res = await getVehiculoById(id);
+        const v = res.data.vehiculo;
         setOrden(v);
-        setOrdenIniciada(!!v.ordenIniciada);
 
-        try {
-          const resEmpleados = await getEmpleados();
-          setEmpleados(resEmpleados.data.empleados || resEmpleados.data);
-        } catch (empErr) {
-          console.warn("No se pudieron cargar los empleados.");
+        if ((v?.presupuesto?.length ?? 0) > 0) {
+          setPresupuestoDesbloqueado(true);
+        }
+
+        if (!tabFromUrl && v?.estadoOrden && ESTADO_TO_TAB[v.estadoOrden]) {
+          let initialTab = ESTADO_TO_TAB[v.estadoOrden];
+          // Orden sin refacciones (omitidas): no hay nada que hacer en
+          // Requisición, se va directo al presupuesto
+          if (
+            initialTab === "req" &&
+            v?.refaccionesOmitidas &&
+            (v?.refaccionesSolicitadas?.length ?? 0) === 0
+          ) {
+            initialTab = "presupuesto";
+          }
+          changeTab(initialTab);
         }
       } catch (err) {
         console.error(err);
-        setError("No se pudo cargar la orden principal.");
+        setError("No se pudo cargar la orden.");
       } finally {
         setLoading(false);
       }
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Polling — refresca la orden cada 8 seg solo cuando el asesor está en el tab req
+  useEffect(() => {
+    if (tab !== "req") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await getVehiculoById(id);
+        setOrden(res.data.vehiculo);
+      } catch (err) {
+        console.error("Error al refrescar la orden:", err);
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [tab, id]);
+
+  // Polling — refresca cada 8 seg en tab reparacion mientras haya refacciones pendientes
+  useEffect(() => {
+    if (tab !== "reparacion") return;
+    const refaccionesAut = (orden?.presupuesto || []).filter((p) => p.autorizado);
+    const todasSurtidas = refaccionesAut.length === 0 || refaccionesAut.every((p) => p.surtida);
+    if (todasSurtidas) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await getVehiculoById(id);
+        setOrden(res.data.vehiculo);
+      } catch (err) {
+        console.error("Error al refrescar la orden:", err);
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [tab, id, orden]);
 
   const handleServicioSaved = (vehiculoActualizado) => {
     setOrden(vehiculoActualizado);
-    setOrdenIniciada(true);
+    if ((vehiculoActualizado?.presupuesto?.length ?? 0) > 0) {
+      setPresupuestoDesbloqueado(true);
+    }
+    // Al omitir refacciones la orden brinca directo al presupuesto;
+    // al solicitar refacciones sigue el flujo normal por Requisición
+    if (
+      vehiculoActualizado?.refaccionesOmitidas &&
+      (vehiculoActualizado?.refaccionesSolicitadas?.length ?? 0) === 0
+    ) {
+      changeTab("presupuesto");
+    } else {
+      changeTab("req");
+    }
+  };
+
+  // Se llama desde VehiculoRequisicionDiagnostico al pulsar "Continuar a Presupuesto"
+  const handleGoPresupuesto = () => {
+    setPresupuestoDesbloqueado(true);
+    changeTab("presupuesto");
+  };
+
+  const handleOrdenSaved = (vActualizado) => {
+    setOrden(vActualizado);
+    if ((vActualizado?.presupuesto?.length ?? 0) > 0) {
+      setPresupuestoDesbloqueado(true);
+    }
   };
 
   if (loading) return <p className="text-center mt-4">Cargando orden...</p>;
@@ -70,95 +211,218 @@ export default function VehiculoOrdenDetalle() {
       {/* Tabs */}
       <ul className="nav nav-tabs mb-3">
         <li className="nav-item">
-          <button className={"nav-link" + (tab === "datos" ? " active" : "")} onClick={() => setTab("datos")}>
+          <button
+            className={"nav-link" + (tab === "datos" ? " active" : "")}
+            style={tab !== "datos" && isPast("datos") ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+            type="button"
+            onClick={() => changeTab("datos")}
+          >
             Datos del Cliente
           </button>
         </li>
+
         <li className="nav-item">
-          <button className={"nav-link" + (tab === "servicio" ? " active" : "")} onClick={() => setTab("servicio")}>
+          <button
+            className={"nav-link" + (tab === "servicio" ? " active" : "")}
+            style={tab !== "servicio" && isPast("servicio") ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+            type="button"
+            onClick={() => changeTab("servicio")}
+          >
             Servicio o Reparación
           </button>
         </li>
+
         {ordenIniciada && (
-          <>
-            <li className="nav-item">
-              <button className={"nav-link" + (tab === "req" ? " active" : "")} onClick={() => setTab("req")}>
-                Requisición y Diagnóstico
-              </button>
-            </li>
-            <li className="nav-item">
-              <button className={"nav-link" + (tab === "presupuesto" ? " active" : "")} onClick={() => setTab("presupuesto")}>
-                Presupuesto y Venta
-              </button>
-            </li>
-            <li className="nav-item">
-              <button className={"nav-link" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>
-                General
-              </button>
-            </li>
-          </>
+          <li className="nav-item">
+            <button
+              className={"nav-link" + (tab === "req" ? " active" : "")}
+              style={tab !== "req" && isPast("req") && presupuestoDesbloqueado ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+              type="button"
+              onClick={() => changeTab("req")}
+            >
+              Requisición y Diagnóstico
+            </button>
+          </li>
+        )}
+
+        {presupuestoHabilitado && (
+          <li className="nav-item">
+            <button
+              className={"nav-link" + (tab === "presupuesto" ? " active" : "")}
+              style={tab !== "presupuesto" && isPast("presupuesto") ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+              type="button"
+              onClick={() => changeTab("presupuesto")}
+            >
+              Presupuesto y Venta al Cliente
+            </button>
+          </li>
+        )}
+
+        {reparacionHabilitada && (
+          <li className="nav-item">
+            <button
+              className={"nav-link" + (tab === "reparacion" ? " active" : "")}
+              style={tab !== "reparacion" && isPast("reparacion") ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+              type="button"
+              onClick={() => changeTab("reparacion")}
+            >
+              Reparación en Curso
+            </button>
+          </li>
+        )}
+
+        {ordenIniciada && (
+          <li className="nav-item ms-auto">
+            <button
+              className={"nav-link" + (tab === "general" ? " active" : "")}
+              style={tab !== "general" && isPast("general") ? { backgroundColor: "#e9ecef", color: "#6c757d" } : {}}
+              type="button"
+              onClick={() => changeTab("general")}
+            >
+              General
+            </button>
+          </li>
         )}
       </ul>
 
-      {/* Contenido de Tabs pasándole isClosed a todos */}
-      <div className="tab-content">
-        {tab === "datos" && (
-          <VehiculoNuevoForm 
-            cliente={null} 
-            initialData={orden} 
-            readOnly={true} // Siempre solo lectura aquí
-          />
-        )}
+      {/* Banners de solo lectura */}
+      {esCerrada && (
+        <div className="alert alert-secondary text-center py-2 mb-3">
+          <strong>Orden cerrada.</strong> Solo lectura — no se pueden realizar modificaciones.
+        </div>
+      )}
+      {esCancelada && (
+        <div className="alert alert-danger text-center py-2 mb-3">
+          <strong>Orden cancelada.</strong> Solo lectura — no se pueden realizar modificaciones.
+        </div>
+      )}
+      {!esCerrada && !esCancelada && soloConsulta && (
+        <div className="alert alert-warning text-center py-2 mb-3">
+          <strong>Orden de otro usuario.</strong> Solo puedes consultarla — no se pueden realizar modificaciones.
+        </div>
+      )}
 
-        {tab === "servicio" && (
-          <ServicioReparacionTab
-            ordenId={orden._id}
-            initialData={orden.servicioReparacion}
-            onSaved={handleServicioSaved}
-            yaCerrada={isClosed} 
-          />
-        )}
+      {/* Contenido de tabs */}
+      {tab === "datos" && (
+        <VehiculoNuevoForm
+          cliente={null}
+          initialData={orden}
+          readOnly
+          puedeEditar={esAdmin || (esPropia && !esCerrada && !esCancelada)}
+          sinVehiculo={orden.sinVehiculo}
+        />
+      )}
 
-        {tab === "req" && ordenIniciada && (
+      {tab === "servicio" && (
+        <ServicioReparacionTab
+          ordenId={orden._id}
+          initialData={orden.servicioReparacion}
+          existingRefacciones={orden.refaccionesSolicitadas || []}
+          serviciosCatalogoSeleccionados={orden.serviciosCatalogoSeleccionados || []}
+          onSaved={handleServicioSaved}
+          readOnly={soloLectura}
+          sinVehiculo={orden.sinVehiculo}
+        />
+      )}
+
+      {tab === "req" && ordenIniciada && (
+        orden.estadoOrden === "PENDIENTE_REFACCIONARIA" ? (
+          <div className="card">
+            <div className="card-body text-center py-5">
+              <div className="spinner-border text-warning mb-3" role="status" style={{ width: "3rem", height: "3rem" }}>
+                <span className="visually-hidden">Espera...</span>
+              </div>
+              <h4 className="fw-bold text-warning">EN ESPERA DE OPCIONES</h4>
+              <p className="text-muted mb-1">
+                La solicitud fue enviada al refaccionario. En cuanto cotice las opciones, podrás seleccionarlas aquí.
+              </p>
+              <p className="text-muted small">Esta pantalla se actualiza automáticamente cada 8 segundos.</p>
+              <div className="mt-4">
+                <h6 className="fw-semibold mb-2">Refacciones solicitadas:</h6>
+                <ul className="list-group list-group-flush d-inline-block text-start" style={{ minWidth: 280 }}>
+                  {(orden.refaccionesSolicitadas || []).map((r, i) => (
+                    <li key={i} className="list-group-item d-flex justify-content-between align-items-center">
+                      <span>{r.refaccion}</span>
+                      <span className="badge bg-secondary ms-3">Cant: {r.cant}</span>
+                    </li>
+                  ))}
+                  {(orden.refaccionesSolicitadas || []).length === 0 && (
+                    <li className="list-group-item text-muted">Sin refacciones registradas.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </div>
+        ) : (
           <VehiculoRequisicionDiagnostico
             orden={orden}
             onSaved={(vActualizado) => setOrden(vActualizado)}
-            readOnly={isClosed} 
+            onGoPresupuesto={handleGoPresupuesto}
+            readOnly={soloLectura}
           />
-        )}
+        )
+      )}
 
-        {tab === "presupuesto" && ordenIniciada && (
-          <VehiculoPresupuestoVenta
-            orden={orden}
-            empleados={empleados}
-            onSaved={(vActualizado) => setOrden(vActualizado)}
-            readOnly={isClosed} 
-          />
-        )}
+      {tab === "presupuesto" && presupuestoHabilitado && (
+        <VehiculoPresupuestoVenta
+          orden={orden}
+          onSaved={handleOrdenSaved}
+          onGoPreparacion={() => changeTab("reparacion")}
+          readOnly={soloLectura}
+        />
+      )}
 
-        {tab === "general" && ordenIniciada && (
-          <VehiculoOrdenGeneral 
-            orden={orden} 
-            readOnly={isClosed} 
-          />
-        )}
-      </div>
+      {tab === "reparacion" && reparacionHabilitada && (
+        <VehiculoReparacionEnCurso
+          orden={orden}
+          onSaved={(vActualizado) => setOrden(vActualizado)}
+          onGoGeneral={() => changeTab("general")}
+          readOnly={soloLectura}
+        />
+      )}
 
-      {/* Botones de Acción */}
-      {(tab === "datos" || tab === "servicio") && (
+      {tab === "general" && ordenIniciada && (
+        <VehiculoOrdenGeneral
+          orden={orden}
+          esAdmin={esAdmin}
+          onClosed={(vActualizado) => setOrden(vActualizado)}
+          onRestored={(vActualizado) => setOrden(vActualizado)}
+        />
+      )}
+
+      {/* Botón PDF Operativo — visible en tab de datos y servicio */}
+      {(tab === "datos" || tab === "servicio") && orden._id && (
         <div className="text-center my-4">
-          <button
-            className="btn btn-outline-secondary me-2"
-            onClick={() => openImprimirPdf(orden._id)}
-          >
-            Imprimir PDF
-          </button>
-          <button
-            className="btn btn-outline-primary"
-            onClick={() => openOperativoPdf(orden._id)}
-          >
-            Formato Operativo
-          </button>
+          <div className="btn-group">
+            <button className="btn btn-outline-primary" onClick={() => openOperativoPdf(orden._id, "a4")}>
+              Formato Operativo
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-primary dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <span className="visually-hidden">Opciones de tamaño</span>
+            </button>
+            <ul className="dropdown-menu">
+              <li>
+                <button className="dropdown-item" onClick={() => openOperativoPdf(orden._id, "a4")}>
+                  A4 (predeterminado)
+                </button>
+              </li>
+              <li>
+                <button className="dropdown-item" onClick={() => openOperativoPdf(orden._id, "carta")}>
+                  Carta (Letter 8.5×11")
+                </button>
+              </li>
+              <li>
+                <button className="dropdown-item" onClick={() => openOperativoPdf(orden._id, "oficio")}>
+                  Oficio (Legal 8.5×14")
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
       )}
     </div>

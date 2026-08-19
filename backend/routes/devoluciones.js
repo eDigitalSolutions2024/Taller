@@ -5,6 +5,10 @@ const EntradaInventario = require('../models/EntradaInventario');
 const SalidaInventario  = require('../models/SalidaInventario');
 try { Proveedor = require('../models/Proveedor'); } catch {}
 const { Devolucion } = require('../models/Devolucion'); // << usar SIEMPRE este
+const DevolucionRefaccion = require('../models/DevolucionRefaccion');
+const CodigoSeq = require('../models/CodigoSeq');
+const CodigoRefaccion = require('../models/CodigoRefaccion');
+const { streamDevolucionRefaccionPdf } = require('../service/devolucionRefaccionPdf');
 
 /* ───────────── Helpers ───────────── */
 
@@ -255,6 +259,201 @@ router.post('/dinero', async (req, res) => {
   } catch (err) {
     console.error('[POST /dinero] error:', err);
     return res.status(500).json({ ok: false, error: err.message || 'Error al registrar la devolución' });
+  }
+});
+
+/* ───────────── Devolución de Refacciones (formato impreso) ───────────── */
+
+// GET /api/devoluciones/refaccion/facturas?q=XXX
+// Búsqueda incremental de facturas en Entrada Inventario (typeahead).
+router.get('/refaccion/facturas', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json([]);
+
+    const ents = await EntradaInventario.find({ numero: asRx(q) })
+      .populate({ path: 'proveedorId', select: 'nombreProveedor aliasProveedor' })
+      .sort({ fechaFactura: -1 })
+      .limit(10)
+      .select('numero fechaFactura proveedorId')
+      .lean();
+
+    res.json(ents.map(e => ({
+      _id: e._id,
+      numero: e.numero || '',
+      proveedor: e.proveedorId ? (e.proveedorId.nombreProveedor || e.proveedorId.aliasProveedor || '') : '',
+      fechaFactura: e.fechaFactura || null,
+    })));
+  } catch (e) {
+    console.error('GET /refaccion/facturas', e);
+    res.status(500).json({ error: 'Error buscando facturas' });
+  }
+});
+
+// GET /api/devoluciones/refaccion/prefill?factura=XXX
+// Prellenado desde Entrada Inventario; los datos siguen siendo editables en la UI.
+router.get('/refaccion/prefill', async (req, res) => {
+  try {
+    const factura = String(req.query.factura || '').trim();
+    if (!factura) return res.status(400).json({ error: 'Falta factura' });
+
+    const ent = await EntradaInventario.findOne({ $or: [{ numero: factura }, { numero: asRx(factura) }] })
+      .populate({ path: 'proveedorId', select: 'nombreProveedor aliasProveedor' })
+      .lean();
+
+    if (!ent) return res.status(404).json({ error: `No hay entradas con la factura ${factura}` });
+
+    // captura.codigoInterno puede traer el _id del catálogo; se resuelve al
+    // código humano (numeroParte/codigo) de CodigoRefaccion.
+    const caps = ent.captura || [];
+    const idsCatalogo = caps.map(c => String(c.codigoInterno || '')).filter(isObjId);
+    let catMap = new Map();
+    if (idsCatalogo.length) {
+      const cats = await CodigoRefaccion.find({ _id: { $in: idsCatalogo } })
+        .select('codigo numeroParte descripcion')
+        .lean();
+      catMap = new Map(cats.map(c => [String(c._id), c]));
+    }
+
+    res.json({
+      numeroFactura: ent.numero || factura,
+      proveedor: ent.proveedorId ? (ent.proveedorId.nombreProveedor || ent.proveedorId.aliasProveedor || '') : '',
+      fechaFactura: ent.fechaFactura || ent.createdAt,
+      moneda: ent.moneda || 'MXN',
+      numeroOrdenServicio: ent.ordenVinculada?.numeroOrden || '',
+      // Tabla completa de la entrada: cada renglón editable pieza por pieza.
+      refacciones: caps.map(c => {
+        const raw = String(c.codigoInterno || '');
+        const cat = catMap.get(raw);
+        const cantidad = Number(c.cantidad || 0);
+        const costoUnitario = Number(c.costoUnitario ?? c.precioUnitario ?? c.pu ?? 0);
+        const descuentoPct = Number(c.descuentoPct ?? 0);
+        // La captura guarda el descuento en %; en la devolución se maneja como monto ($).
+        const descuento = +((cantidad * costoUnitario) * (descuentoPct / 100)).toFixed(2);
+        return {
+          codigo: cat ? (cat.numeroParte || cat.codigo || '') : (isObjId(raw) ? '' : raw),
+          nombre: c.descripcion || cat?.descripcion || '',
+          tipo: c.tipo || '',
+          unidad: c.unidad || 'Pieza',
+          cantidad,
+          costoUnitario,
+          ivaPct: Number(c.ivaPct ?? 16),
+          descuento,
+        };
+      }),
+    });
+  } catch (e) {
+    console.error('GET /refaccion/prefill', e);
+    res.status(500).json({ error: 'Error preparando datos de factura', detail: e.message });
+  }
+});
+
+// GET /api/devoluciones/refaccion?q=&tipo=&desde=&hasta=&limit=
+// Consulta unificada (dinero / pieza x pieza / vale) y listado para reimpresión.
+router.get('/refaccion', async (req, res) => {
+  try {
+    const { q, tipo, desde, hasta } = req.query;
+    const filtro = {};
+
+    if (tipo && ['DINERO', 'PIEZA', 'VALE'].includes(String(tipo))) {
+      filtro.tipoDevolucion = String(tipo);
+    }
+
+    if (desde || hasta) {
+      filtro.fechaDevolucion = {};
+      if (desde) filtro.fechaDevolucion.$gte = toDate(desde);
+      if (hasta) {
+        const h = toDate(hasta);
+        h.setUTCDate(h.getUTCDate() + 1); // incluye todo el día "hasta"
+        filtro.fechaDevolucion.$lt = h;
+      }
+    }
+
+    const texto = String(q || '').trim();
+    if (texto) {
+      const rx = asRx(texto);
+      filtro.$or = [
+        { proveedor: rx },
+        { numeroFactura: rx },
+        { numeroComprobante: rx },
+        { numeroOrdenServicio: rx },
+        { 'refacciones.codigo': rx },
+        { 'refacciones.nombre': rx },
+      ];
+      const n = Number(texto);
+      if (Number.isInteger(n) && n > 0) filtro.$or.push({ folio: n });
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const docs = await DevolucionRefaccion.find(filtro)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('GET /refaccion', e);
+    res.status(500).json({ error: 'Error consultando devoluciones' });
+  }
+});
+
+// POST /api/devoluciones/refaccion
+router.post('/refaccion', async (req, res) => {
+  try {
+    const b = req.body || {};
+
+    if (!b.tipoDevolucion) return res.status(400).json({ ok: false, error: 'Falta el tipo de devolución.' });
+    if (!b.fechaDevolucion) return res.status(400).json({ ok: false, error: 'Falta la fecha de la devolución.' });
+    if (!String(b.proveedor || '').trim()) return res.status(400).json({ ok: false, error: 'Falta el proveedor.' });
+
+    const contador = await CodigoSeq.findOneAndUpdate(
+      { key: 'devolucionRefaccion' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const dev = await DevolucionRefaccion.create({
+      folio: contador.seq,
+      tipoDevolucion: b.tipoDevolucion,
+      proveedor: b.proveedor,
+      fechaFactura: toDate(b.fechaFactura),
+      fechaDevolucion: toDate(b.fechaDevolucion),
+      numeroFactura: b.numeroFactura,
+      numeroComprobante: b.numeroComprobante,
+      refacciones: (b.refacciones || [])
+        .filter(r => (r.codigo || r.nombre))
+        .map(r => ({
+          codigo: r.codigo || '',
+          nombre: r.nombre || '',
+          tipo: r.tipo || '',
+          unidad: r.unidad || '',
+          cantidad: Number(r.cantidad || 0),
+          costoUnitario: Number(r.costoUnitario || 0),
+          ivaPct: Number(r.ivaPct || 0),
+          descuento: Number(r.descuento || 0),
+        })),
+      numeroOrdenServicio: b.numeroOrdenServicio,
+      cantidadRecuperar: b.cantidadRecuperar || {},
+      destinoDevolucion: b.destinoDevolucion || {},
+      motivoDevolucion: b.motivoDevolucion || {},
+      firmas: b.firmas || {},
+    });
+
+    res.status(201).json({ ok: true, folio: dev.folio, devId: dev._id });
+  } catch (e) {
+    console.error('POST /refaccion', e);
+    res.status(500).json({ ok: false, error: e.message || 'Error al registrar la devolución' });
+  }
+});
+
+// GET /api/devoluciones/refaccion/:id/pdf
+router.get('/refaccion/:id/pdf', async (req, res) => {
+  try {
+    const dev = await DevolucionRefaccion.findById(req.params.id).lean();
+    if (!dev) return res.status(404).json({ error: 'Devolución no encontrada' });
+    await streamDevolucionRefaccionPdf(res, dev);
+  } catch (e) {
+    console.error('GET /refaccion/:id/pdf', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Error generando PDF' });
   }
 });
 

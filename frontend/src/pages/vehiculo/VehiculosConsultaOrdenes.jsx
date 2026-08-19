@@ -1,146 +1,155 @@
 import React, { useEffect, useState } from "react";
 import { listOrdenesServicio } from "../../api/vehiculos";
 import { useNavigate } from "react-router-dom";
+import { getUser } from "../../auth";
+import { formatFecha } from "../../utils/fechas";
 
 const TABS = [
-  { key: "PENDIENTE_CAPTURA",            label: "PENDIENTE CAPTURA" },
-  { key: "PENDIENTE_REFACCIONARIA",      label: "PENDIENTE REFACCIONARIA" },
-  { key: "PENDIENTE_AUTORIZACION",       label: "PENDIENTE AUTORIZACION" },
+  { key: "INGRESO",                        label: "INGRESO" },
+  { key: "PENDIENTE_REFACCIONARIA",        label: "PENDIENTE REFACCIONARIA" },
   { key: "PENDIENTE_AUTORIZACION_CLIENTE", label: "PENDIENTE AUTORIZACION CLIENTE" },
-  { key: "REPARACION_EN_CURSO",          label: "REPARACIÓN EN CURSO" },
-  { key: "CALIDAD",                      label: "CALIDAD" },
-  { key: "PENDIENTE_CERRAR",             label: "PENDIENTE DE CERRAR" },
+  { key: "PENDIENTE_SURTIR",               label: "PENDIENTE SURTIR" },
+  { key: "REPARACION_EN_CURSO",            label: "REPARACIÓN EN CURSO" },
+  { key: "PENDIENTE_CIERRE",               label: "PENDIENTE DE CIERRE" },
+  // Órdenes cerradas según su saldo (calculado en el backend con cobranza=)
+  { key: "PENDIENTE_PAGO",                 label: "PENDIENTE DE PAGO" },
+  { key: "LIQUIDADAS",                     label: "LIQUIDADAS" },
 ];
 
+// Tabs que no filtran por estadoOrden directo, sino por saldo de cobranza
+const COBRANZA_MAP = {
+  PENDIENTE_PAGO: "pendientes",
+  LIQUIDADAS: "liquidadas",
+};
+
+const ESTADO_LABELS = {
+  INGRESO:                        "Ingreso",
+  PENDIENTE_REFACCIONARIA:        "Pendiente Refaccionaria",
+  PENDIENTE_AUTORIZACION_CLIENTE: "Pendiente Autorización Cliente",
+  PENDIENTE_SURTIR:               "Pendiente Surtir",
+  PENDIENTE_CIERRE:               "Pendiente de Cierre",
+  REPARACION_EN_CURSO:            "Reparación en Curso",
+  PENDIENTE_CERRAR:               "Pendiente Cerrar",
+  CERRADA:                        "Cerrada",
+  CANCELADA:                      "Cancelada",
+};
+
+const TAB_MAP = {
+  INGRESO:                        "datos",
+  PENDIENTE_REFACCIONARIA:        "req",
+  PENDIENTE_AUTORIZACION_CLIENTE: "req",
+  PENDIENTE_SURTIR:               "presupuesto",
+  REPARACION_EN_CURSO:            "reparacion",
+  PENDIENTE_CIERRE:               "general",
+  PENDIENTE_CERRAR:               "general",
+  CERRADA:                        "general",
+  CANCELADA:                      "general",
+};
+
+// El nombre del cliente vive como snapshot plano en la propia orden.
+function nombreClienteOrden(r) {
+  return (
+    r.nombreGobierno ||
+    [r.nombreCliente, r.apellidoPaterno, r.apellidoMaterno].filter(Boolean).join(" ") ||
+    "-"
+  );
+}
+
 export default function VehiculosConsultaOrdenes() {
-  const [tab,     setTab]     = useState("PENDIENTE_CAPTURA");
-  const [rows,    setRows]    = useState([]);
+  const usuario = getUser();
+  const miNombre = usuario?.name || "";
+
+  const esMiOrden = (r) => r.creadoPor === miNombre;
+
+  const [tab, setTab] = useState("INGRESO");
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
+  const [error, setError] = useState("");
 
-  // ── Búsqueda global ────────────────────────────────────────────────────
-  const [globalOs,      setGlobalOs]      = useState("");
-  const [globalResult,  setGlobalResult]  = useState(null);  // null = sin búsqueda
-  const [globalLoading, setGlobalLoading] = useState(false);
-  const [globalError,   setGlobalError]   = useState("");
-
-  // ── Filtros por tab ────────────────────────────────────────────────────
   const [searchOs, setSearchOs] = useState("");
-  const [search,   setSearch]   = useState("");
-  const [page,     setPage]     = useState(1);
-  const [limit]                 = useState(10);
-  const [total,    setTotal]    = useState(0);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [total, setTotal] = useState(0);
+
+  // Búsqueda general por orden de servicio (sin importar el estado/tab)
+  const [globalOs, setGlobalOs] = useState("");
+  const [globalResults, setGlobalResults] = useState([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [globalError, setGlobalError] = useState("");
+  const [globalSearched, setGlobalSearched] = useState(false);
 
   const navigate = useNavigate();
 
-  // ── Búsqueda global por OS ─────────────────────────────────────────────
-  // Busca en cada estado uno por uno hasta encontrar coincidencia
-  const ALL_ESTADOS = [
-    "PENDIENTE_CAPTURA",
-    "PENDIENTE_REFACCIONARIA",
-    "PENDIENTE_AUTORIZACION",
-    "REPARACION_EN_CURSO",
-    "PENDIENTE_AUTORIZACION_CLIENTE",
-    "CALIDAD",
-    "PENDIENTE_CERRAR",
-    "CERRADA",
-  ];
-
-  const handleGlobalSearch = async (e) => {
-    e.preventDefault();
-    const q = globalOs.trim();
-    if (!q) { setGlobalResult(null); setGlobalError(""); return; }
-
-    try {
-      setGlobalLoading(true);
-      setGlobalError("");
-      setGlobalResult(null);
-
-      // Recorre todos los estados hasta encontrar la orden
-      for (const estado of ALL_ESTADOS) {
-        const res = await listOrdenesServicio({ estado, searchOs: q, page: 1, limit: 5 });
-        const data = res.data.data || [];
-        if (data.length > 0) {
-          setGlobalResult(data[0]);
-          return; // encontrado, salir
-        }
-      }
-
-      setGlobalError("No se encontró ninguna orden con ese folio.");
-    } catch (err) {
-      setGlobalError("Error al buscar la orden.");
-    } finally {
-      setGlobalLoading(false);
-    }
-  };
-
-  const clearGlobal = () => {
-    setGlobalOs("");
-    setGlobalResult(null);
-    setGlobalError("");
-  };
-
-  // ── Datos por tab ──────────────────────────────────────────────────────
   const fetchData = async () => {
     try {
       setLoading(true);
       setError("");
-      const res = await listOrdenesServicio({ estado: tab, searchOs, search, page, limit });
+
+      const params =
+        tab === "PENDIENTE_CIERRE"
+          ? { pendienteCierre: true, searchOs, search, page, limit }
+          : COBRANZA_MAP[tab]
+          ? { cobranza: COBRANZA_MAP[tab], searchOs, search, page, limit }
+          : { estado: tab, searchOs, search, page, limit };
+
+      const res = await listOrdenesServicio(params);
+
       setRows(res.data.data || []);
       setTotal(res.data.total || 0);
     } catch (err) {
+      console.error("Error cargando órdenes:", err);
       setError("No se pudieron cargar las órdenes.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [tab, page]);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, page]);
 
-  const handleBuscar = (e) => { e.preventDefault(); setPage(1); fetchData(); };
+  const handleBuscar = (e) => {
+    e.preventDefault();
+    setPage(1);
+    fetchData();
+  };
+
+  const handleGlobalSearch = async (e) => {
+    e.preventDefault();
+    if (!globalOs.trim()) {
+      setGlobalResults([]);
+      setGlobalSearched(false);
+      setGlobalError("");
+      return;
+    }
+    try {
+      setGlobalLoading(true);
+      setGlobalError("");
+      setGlobalSearched(true);
+      // estado: "" evita el filtro por estado (busca en todas las órdenes)
+      const res = await listOrdenesServicio({
+        estado: "",
+        searchOs: globalOs.trim(),
+        page: 1,
+        limit: 50,
+      });
+      setGlobalResults(res.data.data || []);
+    } catch (err) {
+      console.error("Error en búsqueda general de órdenes:", err);
+      setGlobalError("No se pudo realizar la búsqueda.");
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const irAOrden = (r) => {
+    const targetTab = TAB_MAP[r.estadoOrden] || "datos";
+    navigate(`/vehiculo/orden/${r._id}?tab=${targetTab}`);
+  };
+
   const totalPages = Math.ceil(total / limit) || 1;
-
-  // ── Render fila ────────────────────────────────────────────────────────
-  const RowOrden = ({ r }) => (
-    <tr style={{ cursor: "pointer" }} onClick={() => navigate(`/vehiculo/orden/${r._id}`)}>
-      <td className="text-center">{r.ordenServicio || "-"}</td>
-      <td>{r.nombreCliente || r.nombreGobierno || r.cliente?.nombre || "-"}</td>
-      <td>{(r.marca || "") + (r.modelo ? " / " + r.modelo : "") || "-"}</td>
-      <td className="text-center">{r.anio    || "-"}</td>
-      <td className="text-center">{r.placas  || "-"}</td>
-      <td className="text-center">{r.fechaRecepcion ? new Date(r.fechaRecepcion).toLocaleDateString() : "-"}</td>
-      <td className="text-center">{r.celular || r.telefonoFijo || "-"}</td>
-      <td className="text-center">{r.asesor  || "admin"}</td>
-      <td className="text-center">
-        <span className="badge" style={{
-          background: r.estadoOrden === "CERRADA" ? "#6c757d"
-            : r.estadoOrden === "REPARACION_EN_CURSO" ? "#0d6efd"
-            : r.estadoOrden === "CALIDAD" ? "#198754"
-            : "#ffc107",
-          color: r.estadoOrden === "PENDIENTE_AUTORIZACION" ? "#000" : "#fff",
-          fontSize: 11,
-        }}>
-          {(r.estadoOrden || "").replace(/_/g, " ")}
-        </span>
-      </td>
-    </tr>
-  );
-
-  const TableHead = ({ showEstado = false }) => (
-    <thead className="table-light">
-      <tr className="text-center">
-        <th>Orden de Servicio</th>
-        <th>Cliente</th>
-        <th>Marca / Modelo</th>
-        <th>Año</th>
-        <th>Placas</th>
-        <th>Fecha Recepción</th>
-        <th>Teléfono</th>
-        <th>Asesor</th>
-        {showEstado && <th>Estado</th>}
-      </tr>
-    </thead>
-  );
 
   return (
     <div className="container-fluid">
@@ -148,81 +157,86 @@ export default function VehiculosConsultaOrdenes() {
         CONSULTA GENERAL ÓRDENES DE SERVICIO
       </h2>
 
-      {/* ── BÚSQUEDA GLOBAL ─────────────────────────────────────────── */}
-      <div className="d-flex justify-content-center mb-4">
-        <div className="card shadow-sm" style={{ width: "100%", maxWidth: 560 }}>
-          <div className="card-body py-3">
-            <p className="text-center fw-semibold mb-2" style={{ fontSize: 14 }}>
-              Búsqueda rápida por Orden de Servicio
-            </p>
-            <form className="d-flex gap-2" onSubmit={handleGlobalSearch}>
+      {/* BÚSQUEDA GENERAL POR ORDEN DE SERVICIO */}
+      <div className="card shadow-sm mb-3">
+        <div className="card-body">
+          <form className="row g-2 align-items-end" onSubmit={handleGlobalSearch}>
+            <div className="col-md-6">
+              <label className="form-label mb-0 fw-bold">
+                Búsqueda General por Orden de Servicio
+              </label>
               <input
                 type="text"
                 className="form-control"
-                placeholder="Ej. OS-20260528-115912"
+                placeholder="Ej. OS-00001"
                 value={globalOs}
-                onChange={(e) => { setGlobalOs(e.target.value); setGlobalResult(null); setGlobalError(""); }}
+                onChange={(e) => setGlobalOs(e.target.value)}
               />
-              <button type="submit" className="btn btn-primary px-3" disabled={globalLoading}>
-                {globalLoading ? "…" : "Buscar"}
+            </div>
+            <div className="col-md-2">
+              <button type="submit" className="btn btn-primary w-100">
+                Buscar
               </button>
-              {(globalResult || globalError) && (
-                <button type="button" className="btn btn-outline-secondary" onClick={clearGlobal}>
-                  ✕
-                </button>
-              )}
-            </form>
+            </div>
+          </form>
 
-            {/* Resultado global */}
-            {globalError && (
-              <p className="text-danger text-center mt-2 mb-0" style={{ fontSize: 13 }}>{globalError}</p>
-            )}
-            {globalResult && (
-              <div
-                className="mt-3 p-3 rounded border border-primary"
-                style={{ cursor: "pointer", background: "#f0f7ff" }}
-                onClick={() => navigate(`/vehiculo/orden/${globalResult._id}`)}
-              >
-                <div className="d-flex justify-content-between align-items-start flex-wrap gap-1">
-                  <div>
-                    <span className="fw-bold text-primary" style={{ fontSize: 15 }}>
-                      {globalResult.ordenServicio}
-                    </span>
-                    <span className="ms-2 badge bg-secondary" style={{ fontSize: 11 }}>
-                      {(globalResult.estadoOrden || "").replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  <span className="text-muted" style={{ fontSize: 12 }}>
-                    {globalResult.fechaRecepcion
-                      ? new Date(globalResult.fechaRecepcion).toLocaleDateString()
-                      : ""}
-                  </span>
-                </div>
-                <div className="mt-1" style={{ fontSize: 13 }}>
-                  <strong>Cliente:</strong>{" "}
-                  {globalResult.nombreCliente || globalResult.nombreGobierno || globalResult.cliente?.nombre || "-"}
-                  {" · "}
-                  <strong>Vehículo:</strong>{" "}
-                  {[globalResult.marca, globalResult.modelo, globalResult.anio].filter(Boolean).join(" ")}
-                  {globalResult.placas ? ` · ${globalResult.placas}` : ""}
-                </div>
-                <p className="text-primary mb-0 mt-1" style={{ fontSize: 12 }}>
-                  Clic para abrir la orden →
-                </p>
-              </div>
-            )}
-          </div>
+          {globalLoading && <p className="text-muted mt-2 mb-0">Buscando...</p>}
+          {globalError && <p className="text-danger mt-2 mb-0">{globalError}</p>}
+
+          {!globalLoading && !globalError && globalSearched && (
+            <div className="table-responsive mt-3">
+              <table className="table table-striped table-bordered table-sm">
+                <thead className="table-light">
+                  <tr className="text-center">
+                    <th>Orden de Servicio</th>
+                    <th>Cliente</th>
+                    <th>Marca / Modelo</th>
+                    <th>Placas</th>
+                    <th>Estatus Actual</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalResults.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center text-muted">
+                        No se encontraron órdenes.
+                      </td>
+                    </tr>
+                  )}
+                  {globalResults.map((r) => (
+                    <tr key={r._id} style={{ cursor: "pointer" }} onClick={() => irAOrden(r)}>
+                      <td className="text-center">{r.ordenServicio || "-"}</td>
+                      <td>
+                        {nombreClienteOrden(r)}
+                        {r.cliente?.esEmpleado && (
+                          <span className="badge bg-info-subtle text-info-emphasis ms-2">Empleado</span>
+                        )}
+                      </td>
+                      <td>{(r.marca || "") + (r.modelo ? " / " + r.modelo : "") || "-"}</td>
+                      <td className="text-center">{r.placas || "-"}</td>
+                      <td className="text-center">
+                        {ESTADO_LABELS[r.estadoOrden] || r.estadoOrden || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── TABS ────────────────────────────────────────────────────── */}
+      {/* TABS */}
       <ul className="nav nav-tabs mb-3">
         {TABS.map((t) => (
           <li className="nav-item" key={t.key}>
             <button
               type="button"
               className={"nav-link" + (tab === t.key ? " active fw-bold" : "")}
-              onClick={() => { setTab(t.key); setPage(1); }}
+              onClick={() => {
+                setTab(t.key);
+                setPage(1);
+              }}
             >
               {t.label}
             </button>
@@ -232,51 +246,156 @@ export default function VehiculosConsultaOrdenes() {
 
       <div className="card shadow-sm">
         <div className="card-body">
-          {/* Filtros por tab */}
+          {/* Filtros */}
           <form className="row g-2 align-items-center mb-3" onSubmit={handleBuscar}>
             <div className="col-md-4">
-              <label className="form-label mb-0">Buscar por Orden de Servicio:</label>
-              <input type="text" className="form-control" value={searchOs} onChange={(e) => setSearchOs(e.target.value)} />
+              <label className="form-label mb-0">Buscar Por Orden de Servicio:</label>
+              <input
+                type="text"
+                className="form-control"
+                value={searchOs}
+                onChange={(e) => setSearchOs(e.target.value)}
+              />
             </div>
+
             <div className="col-md-2 d-flex align-items-end">
-              <button type="submit" className="btn btn-primary w-100">Buscar</button>
+              <button type="submit" className="btn btn-primary w-100">
+                Buscar
+              </button>
             </div>
+
             <div className="col-md-2">
               <label className="form-label mb-0">Mostrar</label>
               <select className="form-select" value={limit} disabled>
                 <option value={10}>10 entries</option>
               </select>
             </div>
+
             <div className="col-md-4">
               <label className="form-label mb-0">Search:</label>
-              <input type="text" className="form-control" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleBuscar(e)} />
+              <input
+                type="text"
+                className="form-control"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleBuscar(e)}
+              />
             </div>
           </form>
 
-          {loading && <p className="text-muted">Cargando órdenes...</p>}
-          {error   && <p className="text-danger">{error}</p>}
+          {/* Leyenda de colores */}
+          <div className="d-flex justify-content-end mb-2">
+            <div className="d-flex align-items-center gap-3 small text-muted">
+              <span className="d-flex align-items-center gap-1">
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    display: "inline-block",
+                    backgroundColor: "#9df3aba9",
+                    border: "1px solid #ced4da",
+                    borderRadius: 2,
+                  }}
+                />
+                Tus órdenes
+              </span>
+              <span className="d-flex align-items-center gap-1">
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    display: "inline-block",
+                    backgroundColor: "#f1f3f5",
+                    border: "1px solid #ced4da",
+                    borderRadius: 2,
+                  }}
+                />
+                Órdenes de otros usuarios
+              </span>
+            </div>
+          </div>
 
+          {loading && <p className="text-muted">Cargando órdenes...</p>}
+          {error && <p className="text-danger">{error}</p>}
+
+          {/* TABLA */}
           {!loading && !error && (
             <div className="table-responsive">
-              <table className="table table-striped table-bordered table-sm">
-                <TableHead />
+              <table className="table table-bordered table-sm">
+                <thead className="table-light">
+                  <tr className="text-center">
+                    <th>Orden de Servicio</th>
+                    <th>Cliente</th>
+                    <th>Marca / Modelo</th>
+                    <th>Año</th>
+                    <th>Placas</th>
+                    <th>Fecha Recepción</th>
+                    <th>Teléfono</th>
+                    <th>Asesor</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {rows.length === 0 && (
-                    <tr><td colSpan={8} className="text-center text-muted">No hay órdenes en este estado.</td></tr>
+                    <tr>
+                      <td colSpan={8} className="text-center text-muted">
+                        No hay órdenes en este estado.
+                      </td>
+                    </tr>
                   )}
-                  {rows.map((r) => <RowOrden key={r._id} r={r} />)}
+
+                  {rows.map((r) => (
+                    <tr
+                      key={r._id}
+                      className={esMiOrden(r) ? "table-success" : ""}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => irAOrden(r)}
+                    >
+                      <td className="text-center">{r.ordenServicio || "-"}</td>
+                      <td>
+                        {nombreClienteOrden(r)}
+                        {r.cliente?.esEmpleado && (
+                          <span className="badge bg-info-subtle text-info-emphasis ms-2">Empleado</span>
+                        )}
+                      </td>
+                      <td>{(r.marca || "") + (r.modelo ? " / " + r.modelo : "") || "-"}</td>
+                      <td className="text-center">{r.anio || "-"}</td>
+                      <td className="text-center">{r.placas || "-"}</td>
+                      <td className="text-center">{formatFecha(r.fechaRecepcion) || "-"}</td>
+                      <td className="text-center">{r.celular || r.telefonoFijo || "-"}</td>
+                      <td className="text-center">{r.creadoPor || "-"}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
 
+          {/* PAGINACIÓN SIMPLE */}
           {!loading && total > 0 && (
             <div className="d-flex justify-content-between align-items-center">
-              <span className="text-muted">Mostrando {rows.length} de {total} órdenes</span>
+              <span className="text-muted">
+                Mostrando {rows.length} de {total} órdenes
+              </span>
               <div className="btn-group">
-                <button type="button" className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>« Prev</button>
-                <span className="btn btn-outline-secondary btn-sm disabled">{page} / {totalPages}</span>
-                <button type="button" className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p < totalPages ? p + 1 : p)}>Next »</button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  « Prev
+                </button>
+                <span className="btn btn-outline-secondary btn-sm disabled">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+                >
+                  Next »
+                </button>
               </div>
             </div>
           )}

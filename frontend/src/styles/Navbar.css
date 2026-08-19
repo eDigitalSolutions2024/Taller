@@ -69,8 +69,19 @@
 .emoji{ font-size:20px; width:24px; text-align:center; }
 .label{ transition: opacity .15s ease; }
 
-/* Cuando está colapsada, oculta el texto y deja solo el ícono */
+/* Cuando está colapsada, oculta el texto y deja solo el ícono, centrado */
 .sidebar.is-collapsed .label{ display:none; }
+.sidebar.is-collapsed .sidebar__link,
+.sidebar.is-collapsed .sidebar__group-toggle{
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+.sidebar.is-collapsed .emoji{ width: auto; }
+/* La flechita (chev) de los grupos no se renderiza colapsado, y los
+   submenús quedan ocultos: no hace falta reservar espacio para ellos */
+.sidebar.is-collapsed .sidebar__group .chev{ display:none; }
 
 /* Bottom */
 .sidebar__bottom{
@@ -180,24 +191,17 @@
   .sidebar{ height: 100dvh; } /* corrige en móviles iOS/Android */
 }
 
-/* La zona de navegación crece y hace scroll */
+/* La zona de navegación crece y hace scroll (barra oculta, el scroll sigue
+   funcionando con rueda/touch/teclado) */
 .sidebar__nav{
   flex: 1 1 auto;             /* ocupa el espacio entre top y bottom */
-  overflow-y: auto;           /* << barra de scroll */
+  overflow-y: auto;           /* << scroll */
+  overflow-x: hidden;         /* nunca scroll horizontal */
   min-height: 0;              /* importante en layouts flex */
-  padding-right: 6px;         /* deja espacio para la barra */
-  scrollbar-gutter: stable both-edges; /* evita “saltos” al aparecer la barra */
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* IE/Edge legacy */
 }
-
-/* Scrollbar bonita (opcional) */
-.sidebar__nav::-webkit-scrollbar{ width: 8px; }
-.sidebar__nav::-webkit-scrollbar-thumb{
-  background: rgba(255,255,255,.35); border-radius: 8px;
-}
-.sidebar__nav::-webkit-scrollbar-track{ background: transparent; }
-
-/* En modo colapsado puedes quitar el padding derecho si quieres */
-.sidebar.is-collapsed .sidebar__nav{ padding-right: 0; }
+.sidebar__nav::-webkit-scrollbar{ width: 0; height: 0; } /* Chrome/Safari/Edge */
 
 /* sub-submenú (Devoluciones dentro de Refaccionaria) */
 .sidebar__subgroup { margin-left: 0.1rem; }

@@ -8,12 +8,12 @@ const { proteger, requiereRol } = require('../middleware/auth');
 /**
  * Crear empleado
  * POST /api/empleados
- * Solo jefe o admin pueden crear empleados
+ * Solo admin puede crear empleados
  */
 router.post(
   '/',
   proteger,
-  requiereRol('jefe', 'admin'),
+  requiereRol('admin'),
   async (req, res) => {
     try {
       const { nombre, puesto, telefono, correo, fechaAlta, notas } = req.body;
@@ -49,9 +49,9 @@ router.post(
  * GET /api/empleados
  * ?activo=true|false
  * ?puesto=mecanico
- * Cualquier usuario autenticado puede verlos (si quieres)
+ * Cualquier usuario autenticado puede verlos
  */
-router.get('/', async (req, res) => {
+router.get('/', proteger, async (req, res) => {
   try {
     const filtros = {};
 
@@ -60,6 +60,7 @@ router.get('/', async (req, res) => {
     if (req.query.puesto) filtros.puesto = req.query.puesto;
 
     const empleados = await Empleado.find(filtros)
+      .populate('usuario', 'name email role isActive')
       .sort({ nombre: 1 })
       .lean();
 
@@ -96,15 +97,15 @@ router.get('/:id', proteger, async (req, res) => {
 /**
  * Actualizar empleado
  * PUT /api/empleados/:id
- * jefe, admin o contabilidad pueden editar datos
+ * admin o contabilidad pueden editar datos
  */
 router.put(
   '/:id',
   proteger,
-  requiereRol('jefe', 'admin', 'contabilidad'),
+  requiereRol('admin', 'contabilidad'),
   async (req, res) => {
     try {
-      const { nombre, puesto, telefono, correo, fechaAlta, notas, activo } =
+      const { nombre, puesto, telefono, correo, fechaAlta, notas, activo, usuario } =
         req.body;
 
       const actualizado = await Empleado.findByIdAndUpdate(
@@ -116,7 +117,8 @@ router.put(
           correo,
           fechaAlta,
           notas,
-          ...(typeof activo === 'boolean' ? { activo } : {})
+          ...(typeof activo === 'boolean' ? { activo } : {}),
+          ...(usuario !== undefined ? { usuario: usuario || null } : {})
         },
         { new: true, runValidators: true }
       );
@@ -140,12 +142,12 @@ router.put(
  * Activar / desactivar empleado (cambio rápido de estado)
  * PATCH /api/empleados/:id/estado
  * body: { activo: true/false }
- * Solo jefe o admin
+ * Solo admin
  */
 router.patch(
   '/:id/estado',
   proteger,
-  requiereRol('jefe', 'admin'),
+  requiereRol('admin'),
   async (req, res) => {
     try {
       const { activo } = req.body;

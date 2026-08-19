@@ -9,6 +9,7 @@ const empleadoSchema = new mongoose.Schema(
       type: String,
       enum: [
         'mecanico',
+        'carrocero',
         'ayudante',
         'recepcion',
         'contabilidad',
@@ -29,7 +30,7 @@ const empleadoSchema = new mongoose.Schema(
     // Relación opcional con un usuario del sistema
     usuario: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Usuario',
+      ref: 'User',
       default: null
     },
 

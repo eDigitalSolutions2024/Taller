@@ -3,6 +3,7 @@ import { useNavigate, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import '../styles/Navbar.css';
+import { canSeeModule } from '../utils/roles';
 
 export default function Navbar({ collapsed, onToggle }) {
   const user = getUser();
@@ -15,6 +16,13 @@ const [factOpen, setFactOpen] = useState(
 );
 useEffect(() => {
   if (location.pathname.startsWith("/facturacion")) setFactOpen(true);
+}, [location.pathname]);
+
+const [cajasOpen, setCajasOpen] = useState(
+  location.pathname.startsWith("/cajas")
+);
+useEffect(() => {
+  if (location.pathname.startsWith("/cajas")) setCajasOpen(true);
 }, [location.pathname]);
 
 
@@ -70,27 +78,33 @@ useEffect(() => {
     if (location.pathname.startsWith('/vehiculo')) setVehiculoOpen(true);
   }, [location.pathname]);
 
+  // === ADMINISTRACIÓN ===
+  const [adminOpen, setAdminOpen] = useState(
+    location.pathname.startsWith('/empleados')
+  );
+  useEffect(() => {
+    if (location.pathname.startsWith('/empleados')) setAdminOpen(true);
+  }, [location.pathname]);
 
 
-  // === DEVOLUCIONES (dentro de Refaccionaria) ===
-const [devOpen, setDevOpen] = useState(
-  location.pathname.startsWith('/refaccionaria/devoluciones')
-);
-useEffect(() => {
-  if (location.pathname.startsWith('/refaccionaria/devoluciones')) {
-    setRefaOpen(true);   // asegura abrir el grupo padre
-    setDevOpen(true);    // abre el submenú Devoluciones
-  }
-}, [location.pathname]);
+
+  // Devolución de Refacciones / Consulta Devoluciones viven dentro de
+  // Refaccionaria: asegura que el grupo padre se abra al navegar ahí.
+  useEffect(() => {
+    if (location.pathname.startsWith('/refaccionaria/devoluciones') ||
+        location.pathname.startsWith('/refaccionaria/consulta-devoluciones')) {
+      setRefaOpen(true);
+    }
+  }, [location.pathname]);
 
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
   return (
     <aside className={`sidebar ${collapsed ? "is-collapsed" : ""}`}>
-      
-      
-      
+
+
+
       {/* Top: brand + toggle */}
       <div className="sidebar__top">
         <button
@@ -113,24 +127,56 @@ useEffect(() => {
 
 
 
-      {/* Links */}
+      {/* Links — mismo orden que en edigitaltaller: Inicio, Órdenes de compra,
+          Cajas, Clientes, Proveedores, Vehículo, Facturación, Refaccionaria,
+          Administración (propio de Taller, sin equivalente en la referencia),
+          Reportes/Ajustes. */}
       <nav className="sidebar__nav">
 
-        
+
         <NavLink to="/dashboard" className="sidebar__link" title="Inicio">
           <span className="emoji">🏠</span><span className="label">Inicio</span>
         </NavLink>
 
 
 
-        <NavLink to="/ordenes-compra" className="sidebar__link" title="Órdenes">
-          <span className="emoji">📋</span><span className="label">Órdenes de compra</span>
-        </NavLink>
+        {canSeeModule(user?.role, 'ordenesCompra') && (
+          <NavLink to="/ordenes-compra" className="sidebar__link" title="Órdenes">
+            <span className="emoji">📋</span><span className="label">Órdenes de compra</span>
+          </NavLink>
+        )}
 
-      
+        {/* === GRUPO: CAJAS === */}
+        {canSeeModule(user?.role, 'cajas') && (
+        <div className={`sidebar__group ${cajasOpen ? "open" : ""}`}>
+          <button
+            type="button"
+            className="sidebar__link sidebar__group-toggle"
+            onClick={() => setCajasOpen((o) => !o)}
+            aria-expanded={cajasOpen}
+            aria-controls="submenu-cajas"
+            title="Cajas"
+          >
+            <span className="emoji">💰</span>
+            <span className="label">Cajas</span>
+            {!collapsed && <span className="chev" aria-hidden>▾</span>}
+          </button>
+
+          <div id="submenu-cajas" className="sidebar__sublinks">
+            <NavLink to="/cajas/buscar" className={({ isActive }) => `sidebar__sublink ${isActive ? "active" : ""}`}>
+              <span className="label">Buscar Orden</span>
+            </NavLink>
+            <NavLink to="/cajas/gestion" className={({ isActive }) => `sidebar__sublink ${isActive ? "active" : ""}`}>
+              <span className="label">Gestión de Caja</span>
+            </NavLink>
+          </div>
+        </div>
+        )}
+        {/* === FIN GRUPO CAJAS === */}
 
 
         {/* === GRUPO: CLIENTES === */}
+        {canSeeModule(user?.role, 'clientes') && (
         <div className={`sidebar__group ${clientesOpen ? 'open' : ''}`}>
           <button
             type="button"
@@ -160,14 +206,13 @@ useEffect(() => {
             </NavLink>
           </div>
         </div>
+        )}
         {/* === FIN GRUPO CLIENTES === */}
-        
 
 
-
-        
 
         {/* === GRUPO: PROVEEDORES === */}
+        {canSeeModule(user?.role, 'proveedores') && (
           <div className={`sidebar__group ${provOpen ? 'open' : ''}`}>
             <button
               type="button"
@@ -197,10 +242,8 @@ useEffect(() => {
               </NavLink>
             </div>
           </div>
+        )}
           {/* === FIN GRUPO PROVEEDORES === */}
-
-
-
 
 
          {/* === NUEVO GRUPO: VEHÍCULO === */}
@@ -241,20 +284,66 @@ useEffect(() => {
             </NavLink>
 
             <NavLink
-              to="/vehiculo/exportar"
+              to="/vehiculo/consulta-ordenes-canceladas"
               className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
             >
-              <span className="label">Exportar</span>
+              <span className="label">Canceladas</span>
             </NavLink>
+
+            <NavLink
+              to="/vehiculo/garantias"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">Solicitudes de Garantías</span>
+            </NavLink>
+
+            <NavLink
+              to="/vehiculo/garaje"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">Garaje</span>
+            </NavLink>
+
+            
           </div>
         </div>
         {/* === FIN GRUPO VEHÍCULO === */}
 
 
+        {/* === GRUPO: FACTURACIÓN === */}
+        {canSeeModule(user?.role, 'facturacion') && (
+          <div className={`sidebar__group ${factOpen ? "open" : ""}`}>
+            <button
+              type="button"
+              className="sidebar__link sidebar__group-toggle"
+              onClick={() => setFactOpen(o => !o)}
+              aria-expanded={factOpen}
+              aria-controls="submenu-facturacion"
+              title="Facturación"
+            >
+              <span className="emoji">🧾</span>
+              <span className="label">Facturación</span>
+              {!collapsed && <span className="chev" aria-hidden>▾</span>}
+            </button>
 
+            <div id="submenu-facturacion" className="sidebar__sublinks">
+              <NavLink to="/facturacion" end className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Panel</span>
+              </NavLink>
+              <NavLink to="/facturacion/nueva" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Nueva factura</span>
+              </NavLink>
+              <NavLink to="/facturacion/consultar" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
+                <span className="label">Consultar</span>
+              </NavLink>
+            </div>
+          </div>
+        )}
+          {/* === FIN GRUPO FACTURACIÓN === */}
 
 
         {/* === GRUPO: REFACCIONARIA === */}
+        {canSeeModule(user?.role, 'refaccionaria') && (
         <div className={`sidebar__group ${refaOpen ? 'open' : ''}`}>
           <button
             type="button"
@@ -301,54 +390,19 @@ useEffect(() => {
 
 
 
-            {/* SUBMENÚ: Devoluciones */}
-            <div className={`sidebar__subgroup ${devOpen ? 'open' : ''}`}>
-              <button
-                type="button"
-                className="sidebar__sublink sidebar__subgroup-toggle"
-                onClick={() => setDevOpen(o => !o)}
-                aria-expanded={devOpen}
-                aria-controls="submenu-refa-devoluciones"
-                title="*Devoluciones*"
-              >
-                <span className="label"><em>*Devoluciones*</em></span>
-                {!collapsed && <span className="chev" aria-hidden>▾</span>}
-              </button>
-
-              <div id="submenu-refa-devoluciones" className="sidebar__subsublinks">
-                <NavLink
-                  to="/refaccionaria/devoluciones/dinero"
-                  className={({ isActive }) => `sidebar__subsublink ${isActive ? 'active' : ''}`}
-                >
-                  <span className="label">Dinero</span>
-                </NavLink>
-                <NavLink
-                  to="/refaccionaria/devoluciones/pieza"
-                  className={({ isActive }) => `sidebar__subsublink ${isActive ? 'active' : ''}`}
-                >
-                  <span className="label">Pieza x Pieza</span>
-                </NavLink>
-                <NavLink
-                  to="/refaccionaria/devoluciones/vale"
-                  className={({ isActive }) => `sidebar__subsublink ${isActive ? 'active' : ''}`}
-                >
-                  <span className="label">Vale</span>
-                </NavLink>
-                <NavLink
-                  to="/refaccionaria/devoluciones/consultas"
-                  className={({ isActive }) => `sidebar__subsublink ${isActive ? 'active' : ''}`}
-                >
-                  <span className="label">Consulta Devoluciones</span>
-                </NavLink>
-                <NavLink
-                  to="/refaccionaria/devoluciones/consultas-vales"
-                  className={({ isActive }) => `sidebar__subsublink ${isActive ? 'active' : ''}`}
-                >
-                  <span className="label">Consulta Devoluciones (Vales/Especie)</span>
-                </NavLink>
-              </div>
-            </div>
-          {/* FIN SUBMENÚ: Devoluciones */}
+            {/* Devolución de Refacciones (formato impreso único) */}
+            <NavLink
+              to="/refaccionaria/devoluciones"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">Devolución de Refacciones</span>
+            </NavLink>
+            <NavLink
+              to="/refaccionaria/consulta-devoluciones"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">Consulta Devoluciones</span>
+            </NavLink>
 
 
 
@@ -379,65 +433,51 @@ useEffect(() => {
             >
               <span className="label">Códigos de Piezas</span>
             </NavLink>
+            <NavLink
+              to="/refaccionaria/servicios-catalogo"
+              className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+            >
+              <span className="label">Servicios</span>
+            </NavLink>
           </div>
         </div>
+        )}
         {/* === FIN GRUPO REFACCIONARIA === */}
 
 
-
-                {/* Empleados (solo admin) */}
+                {/* === GRUPO: ADMINISTRACIÓN (solo admin) === */}
         {user?.role === 'admin' && (
-          <NavLink
-            to="/empleados"
-            className="sidebar__link"
-            title="Empleados"
-          >
-            <span className="emoji">👷‍♂️</span>
-            <span className="label">Empleados</span>
-          </NavLink>
-        )}
-
-
-        {/* === GRUPO: FACTURACIÓN === */}
-          <div className={`sidebar__group ${factOpen ? "open" : ""}`}>
+          <div className={`sidebar__group ${adminOpen ? 'open' : ''}`}>
             <button
               type="button"
               className="sidebar__link sidebar__group-toggle"
-              onClick={() => setFactOpen(o => !o)}
-              aria-expanded={factOpen}
-              aria-controls="submenu-facturacion"
-              title="Facturación"
+              onClick={() => setAdminOpen(o => !o)}
+              aria-expanded={adminOpen}
+              aria-controls="submenu-admin"
+              title="Administración"
             >
-              <span className="emoji">🧾</span>
-              <span className="label">Facturación</span>
+              <span className="emoji">🛡️</span>
+              <span className="label">Administración</span>
               {!collapsed && <span className="chev" aria-hidden>▾</span>}
             </button>
 
-            <div id="submenu-facturacion" className="sidebar__sublinks">
-              <NavLink to="/facturacion" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
-                <span className="label">Panel</span>
+            <div id="submenu-admin" className="sidebar__sublinks">
+              <NavLink
+                to="/empleados"
+                className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+              >
+                <span className="label">Personal</span>
               </NavLink>
-              <NavLink to="/facturacion/nueva" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
-                <span className="label">Nueva factura</span>
-              </NavLink>
-              <NavLink to="/facturacion/consultar" className={({isActive}) => `sidebar__sublink ${isActive ? "active": ""}`}>
-                <span className="label">Consultar</span>
+              <NavLink
+                to="/configuracion"
+                className={({ isActive }) => `sidebar__sublink ${isActive ? 'active' : ''}`}
+              >
+                <span className="label">Configuración</span>
               </NavLink>
             </div>
           </div>
-          {/* === FIN GRUPO FACTURACIÓN === */}
-
-
-
-
-
-        <NavLink to="/reportes" className="sidebar__link" title="Reportes">
-          {/*<span className="emoji">📈</span><span className="label">Reportes</span>*/}
-        </NavLink>
-
-        <NavLink to="/ajustes" className="sidebar__link" title="Ajustes">
-          {/*<span className="emoji">⚙️</span><span className="label">Ajustes</span>*/}
-        </NavLink>
+        )}
+        {/* === FIN GRUPO ADMINISTRACIÓN === */}
       </nav>
 
       {/* Bottom */}
