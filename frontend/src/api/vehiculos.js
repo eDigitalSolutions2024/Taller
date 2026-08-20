@@ -82,6 +82,11 @@ export const openVentaClientePdf = (id) => {
   window.open(url, "_blank", "noopener");
 };
 
+export const openContratoClientePdf = (id) => {
+  const url = `${API}/vehiculos/${id}/contrato-cliente-pdf`;
+  window.open(url, "_blank", "noopener");
+};
+
 // ✅ Agregado de edigitaltaller
 export const marcarSurtidas = (id, presupuesto) =>
   http.put(`/vehiculos/${id}/surtir`, { presupuesto });

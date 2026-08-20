@@ -1,6 +1,6 @@
 // src/pages/vehiculo/VehiculoNuevoForm.jsx
 import React, { useEffect, useState } from "react";
-import { createVehiculo, updateDatosOrden, descartarImagenesTemp } from "../../api/vehiculos";
+import { createVehiculo, updateDatosOrden, descartarImagenesTemp, openContratoClientePdf } from "../../api/vehiculos";
 import { getFolioOrdenServicio } from "../../api/configuracion";
 import { searchGarageVehiculos, upsertGarageVehiculo } from "../../api/garage";
 import VehicleDamageCanvas from "../../components/VehicleDamageCanvas";
@@ -960,6 +960,15 @@ export default function VehiculoNuevoForm({ cliente, initialData, readOnly = fal
                 <button type="submit" className="btn btn-success px-5" disabled={guardando}>{guardando?"Guardando...":"Guardar cambios"}</button>
                 <button type="button" className="btn btn-secondary px-4" disabled={guardando} onClick={() => setEditandoAdmin(false)}>Cancelar</button>
               </div>
+            )}
+            {initialData?._id && (
+              <button
+                type="button"
+                className="btn btn-outline-primary px-4"
+                onClick={() => openContratoClientePdf(initialData._id)}
+              >
+                Imprimir Contrato
+              </button>
             )}
           </div>
 

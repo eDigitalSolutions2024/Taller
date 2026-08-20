@@ -353,6 +353,20 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
         delete payload.empresa;
       }
 
+      // Adaptar campos singulares del formulario al modelo con arrays
+      if (payload.telefono) {
+        payload.telefonos = [payload.telefono];
+        delete payload.telefono;
+      }
+      if (payload.celular) {
+        payload.celulares = [payload.celular];
+        delete payload.celular;
+      }
+      if (payload.email !== undefined) {
+        payload.emails = [payload.email].filter(Boolean);
+        delete payload.email;
+      }
+
       if (isEdit) {
         await updateCustomer(id, payload);
         setMsg("✅ Cliente actualizado correctamente.");

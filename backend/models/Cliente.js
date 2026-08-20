@@ -30,8 +30,8 @@ const ContactoSchema = new Schema(
   {
     nombre: { type: String, trim: true },
     correo: { type: String, trim: true, lowercase: true },
-    telefono: { type: TelefonoSchema, default: undefined },
-    celular: { type: TelefonoSchema, default: undefined },
+    telefonos: { type: [TelefonoSchema], default: [] },
+    celulares: { type: [TelefonoSchema], default: [] },
     departamento: { type: String, trim: true },
     puesto: { type: String, trim: true },
   },
@@ -67,6 +67,8 @@ const FacturacionSchema = new Schema(
   {
     mismaQueDireccion: { type: Boolean, default: true },
     direccion: { type: DireccionSchema, default: undefined },
+    regimenFiscal: { type: String, trim: true },
+    usoCFDI: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -82,10 +84,8 @@ const TIPOS = [
 
 const ClienteSchema = new Schema(
   {
-    // Tipo controla qué ramas se usan (empresa/gobierno/particular)
     tipoCliente: { type: String, enum: TIPOS, default: "Particular", index: true },
 
-    // Datos “particular” (también útiles como contacto general)
     nombre: { type: String, trim: true },
     apellidoPaterno: { type: String, trim: true },
     apellidoMaterno: { type: String, trim: true },
@@ -170,7 +170,7 @@ ClienteSchema.pre("save", function (next) {
   next();
 });
 
-// Validación por tipo: exige campos mínimos según tipo de cliente
+/* ---------- Validaciones por tipo ---------- */
 ClienteSchema.pre("validate", function (next) {
   const t = this.tipoCliente;
 
@@ -178,15 +178,7 @@ ClienteSchema.pre("validate", function (next) {
     if (!this.nombre || !this.nombre.trim()) {
       this.invalidate("nombre", "El nombre es obligatorio para clientes particulares.");
     }
-    // Limpia ramas no usadas
     this.empresa = undefined;
-    this.gobierno = undefined;
-  }
-
-  if (t === "Empresa Privada" || t === "Empresa Arrendadora") {//|| !this.empresa.razonSocial || !this.empresa.razonSocial.trim()
-    if (!this.empresa  ) {
-      this.invalidate("empresa.razonSocial", "La razón social es obligatoria para empresas.");
-    }
     this.gobierno = undefined;
   }
 

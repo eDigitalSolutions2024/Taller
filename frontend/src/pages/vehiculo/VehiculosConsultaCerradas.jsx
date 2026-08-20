@@ -55,9 +55,9 @@ export default function VehiculoConsultaCerradas() {
   };
 
   const handleRowDblClick = (ordenId) => {
-  if (!ordenId) return;
-  navigate(`/vehiculo/orden/${ordenId}`);  // 👈 igualito que en la otra tabla
-};
+    if (!ordenId) return;
+    navigate(`/vehiculo/orden/${ordenId}?tab=general`);
+  };
 
   const handleRestablecer = async (ordenId) => {
     if (!window.confirm("¿Restablecer esta orden a su estado anterior?")) return;
@@ -148,17 +148,17 @@ export default function VehiculoConsultaCerradas() {
             )}
 
             {rows.map((o) => {
+              const c = o.cliente || {};
               const clienteNombre =
-                o.nombreGobierno ||
-                o.cliente?.nombre ||
-                o.clienteNombre ||
+                c.gobierno?.nombreGobierno ||
+                [c.nombre, c.apellidoPaterno, c.apellidoMaterno].filter(Boolean).join(" ") ||
                 "";
 
+              const tel = (c.telefonos || [])[0] || {};
+              const cel = (c.celulares || [])[0] || {};
               const telefono =
-                (o.telefonoFijoLada
-                  ? o.telefonoFijoLada + " " + (o.telefonoFijo || "")
-                  : o.telefonoFijo) ||
-                o.celular ||
+                [tel.lada, tel.numero].filter(Boolean).join(" ") ||
+                [cel.lada, cel.numero].filter(Boolean).join(" ") ||
                 "";
 
               return (

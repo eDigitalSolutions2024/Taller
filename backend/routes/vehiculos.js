@@ -23,6 +23,7 @@ const { streamVehiculoOperativoPdf } = require('../service/VehiculoOperativoPdf'
 const { streamVehiculoOrdenPdf } = require('../service/vehiculoOrdenPdf');
 const { generarPresupuestoPDF } = require('../service/VehiculoPresupuestoPDF');
 const { generarVentaClientePDF } = require('../service/VehiculoVentaClientePDF');
+const { streamVehiculoContratoClientePdf } = require('../service/VehiculoContratoClientePdf');
 
 // Campos del cliente que necesita Facturación (RFC/régimen/dirección fiscal)
 // además de lo que ya usaban los listados existentes (nombre/esEmpleado).
@@ -1844,6 +1845,20 @@ router.delete('/imagenes/temp/:tempId', validarTempId, (req, res) => {
   const dir = path.join(IMAGENES_TEMP_DIR, req.params.tempId);
   fs.rm(dir, { recursive: true, force: true }, () => {});
   return res.json({ ok: true });
+});
+
+// GET /api/vehiculos/:id/contrato-cliente-pdf
+router.get('/:id/contrato-cliente-pdf', async (req, res) => {
+  try {
+    const vehiculo = await Vehiculo.findById(req.params.id).populate('cliente', POPULATE_CLIENTE);
+    if (!vehiculo) {
+      return res.status(404).json({ success: false, message: 'Orden no encontrada' });
+    }
+    await streamVehiculoContratoClientePdf(res, vehiculo);
+  } catch (err) {
+    console.error('Error generando contrato cliente:', err);
+    res.status(500).json({ success: false, message: 'Error al generar contrato' });
+  }
 });
 
 module.exports = router;
