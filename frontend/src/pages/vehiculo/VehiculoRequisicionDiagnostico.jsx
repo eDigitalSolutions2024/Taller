@@ -2,46 +2,107 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   saveRequisicionDiagnostico,
+  updateHistorialDiagnostico,
   generarOrdenCompra,
 } from "../../api/vehiculos";
 import http from "../../api/http";
 
-export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPresupuesto }) {
-  const [diagnostico, setDiagnostico] = useState("");
-  const [rows, setRows]               = useState([]);
-  const [cargos, setCargos]           = useState([]);
-  const [saving, setSaving]           = useState(false);
+// Modal para corregir el texto de una entrada ya guardada en el historial de
+// diagnósticos (no cambia la fecha original, solo el texto).
+function EditarDiagnosticoModal({ entry, saving, onSave, onClose }) {
+  const [texto, setTexto] = useState(entry?.texto || "");
 
-  // Historial de diagnósticos (Taller)
+  if (!entry) return null;
+
+  return (
+    <div
+      className="modal d-block"
+      tabIndex="-1"
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="modal-dialog">
+        <div className="modal-content">
+          <div className="modal-header">
+            <h5 className="modal-title fw-bold">Editar diagnóstico</h5>
+            <button type="button" className="btn-close" onClick={onClose} />
+          </div>
+
+          <div className="modal-body">
+            <small className="text-muted d-block mb-2">
+              {entry.fecha ? new Date(entry.fecha).toLocaleString("es-MX") : ""}
+            </small>
+            <textarea
+              className="form-control"
+              rows={5}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-success"
+              onClick={() => onSave(texto)}
+              disabled={saving || !texto.trim()}
+            >
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPresupuesto, readOnly = false }) {
+  const [diagnostico, setDiagnostico]     = useState("");
+  const [rows, setRows]                   = useState([]);
+  const [cargos, setCargos]               = useState([]);
+  const [saving, setSaving]               = useState(false);
+  const [savingLine, setSavingLine]       = useState(false);
   const [historialDiagnosticos, setHistorialDiagnosticos] = useState([]);
+  const [editEntry, setEditEntry]         = useState(null);
+  const [savingEdit, setSavingEdit]       = useState(false);
 
-  // Mano de obra
-  const [moRows, setMoRows]         = useState([]);
-  const [mecanicos, setMecanicos]   = useState([]);
-  const [carroceros, setCarroceros] = useState([]);
-  const [moLine, setMoLine]         = useState({
-    concepto: "",
-    mecanico: "",
-    horas: "",
-    fechaPago: "",
-    observaciones: "",
-    esCarroceria: false,
-    carrocero: "",
-    precioCarroceria: "",
-  });
+  // El tab "req" hace polling cada 8s (ver VehiculoOrdenDetalle.jsx) para
+  // reflejar en vivo las cotizaciones de refaccionaria, y cada refresh trae
+  // un objeto `orden` nuevo. El diagnóstico es texto libre que el técnico
+  // captura y solo se guarda al pulsar un botón explícito: si se
+  // reinicializara en cada refresh, el polling borraría lo que aún no se
+  // había guardado. Por eso se inicializa una sola vez por orden (id), no en
+  // cada cambio de `orden`.
+  useEffect(() => {
+    if (!orden) return;
+    setDiagnostico(orden.diagnosticoTecnico || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orden?._id]);
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
+  // El diagnóstico es texto libre: no se guarda solo mientras el técnico
+  // escribe, solo cuando pulsa una acción explícita ("Guardar en historial
+  // del vehículo", "Guardar selección", "Continuar a Presupuesto", etc.),
+  // que ya mandan `diagnostico` en su payload.
+  const handleDiagnosticoChange = (e) => {
+    setDiagnostico(e.target.value);
+  };
+
+  // ── Carga inicial ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!orden) return;
 
-    setDiagnostico(orden.diagnosticoTecnico || "");
     setHistorialDiagnosticos(orden.historialDiagnosticos || []);
 
     const refConEstatus = (orden.refaccionesSolicitadas || []).map((r) => ({
       ...r,
       cant: Number(r.cant || 0),
       estatus: r.estatus || "PENDIENTE",
-      opcionSeleccionada: r.opcionSeleccionada === undefined ? null : r.opcionSeleccionada,
+      opcionSeleccionada:
+        r.opcionSeleccionada === undefined ? null : r.opcionSeleccionada,
       opciones: Array.isArray(r.opciones)
         ? r.opciones.map((op) => ({
             ...op,
@@ -65,42 +126,15 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
 
     setRows(refConEstatus);
     setCargos(orden.cargosEnOrden || []);
-    setMoRows(orden.manoObra || []);
-  }, [orden?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orden]);
 
-  // Cargar catálogo de empleados
-  useEffect(() => {
-    const cargar = async () => {
-      try {
-        const [resMec, resCar] = await Promise.all([
-          http.get("/empleados?puesto=mecanico&activo=true"),
-          http.get("/empleados?puesto=carrocero&activo=true"),
-        ]);
-        setMecanicos(resMec.data || []);
-        setCarroceros(resCar.data || []);
-      } catch (err) {
-        console.error("Error cargando empleados:", err);
-      }
-    };
-    cargar();
-  }, []);
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const formatMoney = (n) =>
     new Intl.NumberFormat("es-MX", {
       style: "currency",
       currency: "MXN",
       minimumFractionDigits: 2,
     }).format(Number(n) || 0);
-
-  const formatFecha = (value) => {
-    if (!value) return "";
-    const [year, month, day] = String(value).split("-");
-    if (!year || !month || !day) return value;
-    const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-    return `${day}-${meses[Number(month) - 1]}-${year}`;
-  };
 
   const badgeClass = (estatus) => {
     switch (estatus) {
@@ -110,95 +144,58 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
     }
   };
 
-  const getOpcion    = (r) => r.opciones?.[r.opcionSeleccionada] || {};
   const getSeleccionadas = () =>
     rows.filter((r) => r.estatus === "APROBADA" && r.opcionSeleccionada !== null);
 
-  // ── Guardar diagnóstico en historial (Taller) ──────────────────────────────
+  // ── Guardar diagnóstico en historial ────────────────────────────────────
   const guardarDiagnosticoEnHistorial = async () => {
     if (!diagnostico.trim()) return;
     try {
       const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: rows,
-        manoObra: moRows,
         guardarEnHistorial: true,
       });
       if (onSaved) onSaved(res.data.vehiculo);
-      setHistorialDiagnosticos(res.data.vehiculo?.historialDiagnosticos || []);
       alert("Guardado en historial.");
     } catch (err) {
       alert("Error al guardar en historial.");
     }
   };
 
-  // ── Mano de obra ───────────────────────────────────────────────────────────
-  const handleMoLineChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setMoLine((prev) => {
-      const updates = { [name]: type === "checkbox" ? checked : value };
-      if (name === "esCarroceria") {
-        updates.mecanico  = "";
-        updates.carrocero = "";
-      }
-      return { ...prev, ...updates };
-    });
-  };
-
-  const addMoRow = async () => {
-    if (!moLine.concepto.trim()) {
-      alert("Captura al menos el concepto/servicio.");
-      return;
-    }
-    const nuevasMo = [...moRows, moLine];
-    setMoRows(nuevasMo);
-    setMoLine({
-      concepto: "", mecanico: "", horas: "", fechaPago: "",
-      observaciones: "", esCarroceria: false, carrocero: "", precioCarroceria: "",
-    });
+  // ── Editar una entrada ya guardada en el historial ──────────────────────
+  const handleGuardarEdicionHistorial = async (nuevoTexto) => {
+    if (!editEntry?._id) return;
     try {
-      await saveRequisicionDiagnostico(orden._id, {
-        diagnosticoTecnico: diagnostico,
-        refacciones: rows,
-        manoObra: nuevasMo,
-      });
+      setSavingEdit(true);
+      const res = await updateHistorialDiagnostico(orden._id, editEntry._id, nuevoTexto);
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
+      setHistorialDiagnosticos((prev) =>
+        prev.map((d) => (d._id === editEntry._id ? { ...d, texto: nuevoTexto } : d))
+      );
+      setEditEntry(null);
     } catch (err) {
-      alert("Error al guardar la mano de obra.");
-      setMoRows(moRows);
+      alert("Error al editar el diagnóstico.");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
-  const removeMoRow = async (idx) => {
-    const prevMo  = moRows;
-    const nuevasMo = moRows.filter((_, i) => i !== idx);
-    setMoRows(nuevasMo);
-    try {
-      await saveRequisicionDiagnostico(orden._id, {
-        diagnosticoTecnico: diagnostico,
-        refacciones: rows,
-        manoObra: nuevasMo,
-      });
-    } catch (err) {
-      alert("Error al borrar la mano de obra.");
-      setMoRows(prevMo);
-    }
-  };
-
-  // ── Guardar payload base ───────────────────────────────────────────────────
+  // ── Guardar payload base ─────────────────────────────────────────────────
   const guardarRequisicion = async (estadoOrden) => {
     const payload = {
       diagnosticoTecnico: diagnostico,
       refacciones: rows,
-      manoObra: moRows,
     };
     if (estadoOrden) payload.estadoOrden = estadoOrden;
+
     const res = await saveRequisicionDiagnostico(orden._id, payload);
     const vAct = res.data.vehiculo;
     if (onSaved) onSaved(vAct);
     return vAct;
   };
 
-  // ── Botones principales ────────────────────────────────────────────────────
+  // ── Botones principales ──────────────────────────────────────────────────
   const handleGuardarSeleccion = async () => {
     try {
       setSaving(true);
@@ -225,7 +222,9 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
   };
 
   const handleContinuarPresupuesto = async () => {
-    if (getSeleccionadas().length === 0) {
+    // Si el asesor omitió refacciones (orden de puros servicios), no hay
+    // nada que seleccionar aquí: se deja pasar directo a Presupuesto.
+    if (getSeleccionadas().length === 0 && !orden?.refaccionesOmitidas) {
       alert("Selecciona al menos una refacción para continuar al presupuesto.");
       return;
     }
@@ -241,28 +240,57 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
     }
   };
 
-  // ── Elegir / quitar opción ─────────────────────────────────────────────────
+  // ── Elegir / quitar opción ───────────────────────────────────────────────
   const handleSeleccionarOpcion = async (refIdx, opIdx) => {
-    const ref = rows[refIdx];
-    if (!ref?.opciones?.[opIdx]) return;
+    const ref   = rows[refIdx];
+    const opcion = ref?.opciones?.[opIdx];
+    if (!opcion) return;
+
+    const cant       = Number(ref.cant || 0);
+    const precio     = Number(opcion.precioUnitario || 0);
+    const moneda     = opcion.moneda || "MN";
+    const tipoCambio = moneda === "USD" ? Number(opcion.tipoCambio || 0) : 0;
+    const importe    = cant * precio * (moneda === "USD" ? tipoCambio : 1);
 
     const nuevasFilas = rows.map((r, i) => {
       if (i !== refIdx) return r;
       return {
         ...r,
+        unidad:        opcion.unidad       || r.unidad || "",
+        tipo:          opcion.tipo         || "",
+        marca:         opcion.marca        || "",
+        proveedor:     opcion.proveedor    || "",
+        codigo:        opcion.codigo       || "",
+        precioUnitario: precio,
+        tipoCambio,
+        importeTotal:  importe,
+        moneda,
+        tiempoEntrega: opcion.tiempoEntrega || "",
+        core:          opcion.core          || "",
+        precioCore:    Number(opcion.precioCore || 0),
+        observaciones: opcion.observaciones || "",
         opcionSeleccionada: opIdx,
+        opciones: (r.opciones || []).map((op, idx) => ({
+          ...op,
+          seleccionada: idx === opIdx,
+        })),
         estatus: "APROBADA",
-        opciones: (r.opciones || []).map((op, oi) => ({ ...op, seleccionada: oi === opIdx })),
       };
     });
 
     setRows(nuevasFilas);
     try {
-      await saveRequisicionDiagnostico(orden._id, {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
-        manoObra: moRows,
       });
+      // Sincroniza de inmediato la orden del padre con la respuesta del
+      // servidor: si no se hace, el padre solo se entera de esta selección
+      // hasta el siguiente poll (cada 8s en el tab "req"), y si ese poll
+      // llega a dispararse antes de que este guardado termine, pisa la
+      // selección recién hecha con datos viejos (se ve "elegida" y luego,
+      // sin razón aparente, deja de estarlo).
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
     } catch (err) {
       alert("Error al elegir la refacción.");
     }
@@ -273,24 +301,27 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
       if (i !== refIdx) return r;
       return {
         ...r,
+        tipo: "", marca: "", proveedor: "", codigo: "",
+        precioUnitario: 0, importeTotal: 0,
+        tiempoEntrega: "", core: "", precioCore: 0, observaciones: "",
         opcionSeleccionada: null,
-        estatus: "PENDIENTE",
         opciones: (r.opciones || []).map((op) => ({ ...op, seleccionada: false })),
+        estatus: "PENDIENTE",
       };
     });
     setRows(nuevasFilas);
     try {
-      await saveRequisicionDiagnostico(orden._id, {
+      const res = await saveRequisicionDiagnostico(orden._id, {
         diagnosticoTecnico: diagnostico,
         refacciones: nuevasFilas,
-        manoObra: moRows,
       });
+      if (onSaved && res?.data?.vehiculo) onSaved(res.data.vehiculo);
     } catch (err) {
       alert("Error al quitar la selección.");
     }
   };
 
-  // ── Orden de compra ────────────────────────────────────────────────────────
+  // ── Orden de compra ──────────────────────────────────────────────────────
   const handleVerOrdenCompra = async (ordenCompraId) => {
     if (!ordenCompraId) return;
     try {
@@ -310,13 +341,14 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
       return;
     }
     if (ref.estatus !== "APROBADA") {
-      alert("Solo se puede generar OC para refacciones APROBADAS.");
+      alert("Solo se puede generar orden de compra para refacciones APROBADAS.");
       return;
     }
     if (!window.confirm("¿Generar orden de compra para esta refacción?")) return;
 
-    const prevRows   = rows;
+    const prevRows = rows;
     setRows(rows.map((r, i) => i === idx ? { ...r, _ocLoading: true } : r));
+
     try {
       const data = await generarOrdenCompra(orden._id, ref);
       setRows(rows.map((r, i) =>
@@ -325,7 +357,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
               numeroOC: data.numeroOC || null, ordenCompra: data.ordenCompraId || null }
           : r
       ));
-      alert(data.numeroOC ? `OC generada: ${data.numeroOC}` : "Orden de compra generada.");
+      alert(data.numeroOC ? `Orden de compra generada: ${data.numeroOC}` : "Orden de compra generada.");
       if (data.ordenCompraId) await handleVerOrdenCompra(data.ordenCompraId);
     } catch (err) {
       alert("Error al generar la orden de compra.");
@@ -333,64 +365,103 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
     }
   };
 
-  // ── Totales ────────────────────────────────────────────────────────────────
+  // ── Totales ──────────────────────────────────────────────────────────────
   const totalSeleccionadas = useMemo(
-    () => getSeleccionadas().reduce((acc, r) => acc + (Number(getOpcion(r).importeTotal) || 0), 0),
-    [rows] // eslint-disable-line react-hooks/exhaustive-deps
+    () => getSeleccionadas().reduce((acc, r) => acc + (Number(r.importeTotal) || 0), 0),
+    [rows]
   );
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="card">
       <div className="card-body">
 
-        {/* ── DIAGNÓSTICO DEL TÉCNICO ── */}
-        <div className="card mb-4 border-secondary">
-          <div className="card-header fw-bold bg-secondary text-white">
-            DIAGNÓSTICO DEL TÉCNICO
-          </div>
-          <div className="card-body">
+        {/* ── Diagnóstico ──────────────────────────────────────────────── */}
+        <div className="d-flex justify-content-between align-items-start mb-3">
+          <div className="flex-grow-1 me-3">
+            <label className="form-label">Diagnóstico del Técnico:</label>
             <textarea
-              className="form-control mb-2"
-              rows={4}
-              placeholder="Describe el diagnóstico técnico del vehículo..."
+              className="form-control"
+              rows={3}
               value={diagnostico}
-              onChange={(e) => setDiagnostico(e.target.value)}
+              onChange={handleDiagnosticoChange}
+              disabled={readOnly}
             />
-            <button
-              type="button"
-              className="btn btn-outline-success btn-sm"
-              onClick={guardarDiagnosticoEnHistorial}
-            >
-              Guardar en historial del vehículo
-            </button>
 
-            {historialDiagnosticos.length > 0 && (
-              <div className="border mt-3 p-2 rounded" style={{ maxHeight: "180px", overflowY: "auto" }}>
-                {historialDiagnosticos.slice().reverse().map((d, idx) => (
-                  <div key={idx} className="d-flex justify-content-between align-items-start mb-2">
-                    <div style={{ maxWidth: "80%" }}>
-                      <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
-                      <small className="text-muted">
-                        {d.fecha ? new Date(d.fecha).toLocaleString("es-MX") : ""}
-                      </small>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-primary ms-2"
-                      onClick={() => setDiagnostico(d.texto || "")}
-                    >
-                      Usar
-                    </button>
+            <div className="mt-2">
+              <button
+                type="button"
+                className="btn btn-outline-success btn-sm"
+                onClick={guardarDiagnosticoEnHistorial}
+                disabled={readOnly}
+              >
+                Guardar en historial del vehículo
+              </button>
+            </div>
+
+            {/* Historial */}
+            <div className="border mt-2 p-2" style={{ maxHeight: "180px", overflowY: "auto" }}>
+              {historialDiagnosticos.length === 0 && (
+                <small className="text-muted">Sin diagnósticos previos.</small>
+              )}
+              {historialDiagnosticos.slice().reverse().map((d, idx) => (
+                <div key={d._id || idx} className="d-flex justify-content-between align-items-start mb-2">
+                  <div style={{ maxWidth: "78%" }}>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{d.texto}</div>
+                    <small className="text-muted">
+                      {d.fecha ? new Date(d.fecha).toLocaleString("es-MX") : ""}
+                    </small>
                   </div>
-                ))}
-              </div>
-            )}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    onClick={() => setEditEntry(d)}
+                    disabled={!d._id}
+                    title={!d._id ? "Esta entrada es de un formato antiguo y no se puede editar" : undefined}
+                  >
+                    Editar
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
+
+          {/* Botones principales */}
+          {!readOnly && (
+            <div className="mt-4 d-flex flex-column gap-2 align-items-stretch">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleGuardarSeleccion}
+                disabled={saving}
+              >
+                Guardar selección
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={handleRegresarRefaccionaria}
+                disabled={saving}
+              >
+                Regresar a Refaccionaria
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleContinuarPresupuesto}
+                disabled={saving}
+              >
+                {saving ? "Guardando..." : "Continuar a Presupuesto"}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* ── OPCIONES DE REFACCIONES ── */}
-        <h5 className="text-center mb-3 fw-bold">OPCIONES DE REFACCIONES</h5>
+        {/* ── Opciones de refacciones ───────────────────────────────────── */}
+        <h5 className="text-center mb-2 fw-bold">OPCIONES DE REFACCIONES</h5>
 
         <div className="mb-4">
           {rows.length === 0 && (
@@ -431,6 +502,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                       <th style={{ width: "110px" }}>Acción</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {(!r.opciones || r.opciones.length === 0) && (
                       <tr>
@@ -439,6 +511,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                         </td>
                       </tr>
                     )}
+
                     {(r.opciones || []).map((op, opIdx) => (
                       <tr key={opIdx} className={op.seleccionada ? "table-success" : ""}>
                         <td className="text-center">{op.tipo         || "-"}</td>
@@ -468,6 +541,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                                 : "btn btn-outline-primary btn-sm w-100"
                             }
                             onClick={() => handleSeleccionarOpcion(idx, opIdx)}
+                            disabled={readOnly}
                           >
                             {op.seleccionada ? "Elegida ✓" : "Elegir"}
                           </button>
@@ -481,8 +555,8 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
           ))}
         </div>
 
-        {/* ── REFACCIONES SELECCIONADAS ── */}
-        <h5 className="text-center mb-3 fw-bold">REFACCIONES SELECCIONADAS</h5>
+        {/* ── Refacciones seleccionadas ─────────────────────────────────── */}
+        <h5 className="text-center mb-2 fw-bold">REFACCIONES SELECCIONADAS</h5>
 
         <div className="table-responsive mb-4">
           <table className="table table-bordered table-sm align-middle">
@@ -504,6 +578,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                 <th style={{ width: "100px" }}>Acción</th>
               </tr>
             </thead>
+
             <tbody>
               {getSeleccionadas().length === 0 && (
                 <tr>
@@ -512,33 +587,35 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                   </td>
                 </tr>
               )}
+
               {rows.map((r, idx) => {
                 if (r.estatus !== "APROBADA" || r.opcionSeleccionada === null) return null;
-                const op = getOpcion(r);
+
                 return (
                   <tr key={idx}>
                     <td className="text-center">{r.cant}</td>
-                    <td className="text-center">{op.unidad || "-"}</td>
+                    <td className="text-center">{r.unidad}</td>
                     <td>{r.refaccion}</td>
-                    <td className="text-center">{op.tipo || "-"}</td>
-                    <td>{op.marca || "-"}</td>
-                    <td>{op.proveedor || "-"}</td>
-                    <td>{op.codigo || "-"}</td>
-                    <td className="text-end">{formatMoney(op.precioUnitario)}</td>
-                    <td className="text-end fw-bold">{formatMoney(op.importeTotal)}</td>
-                    <td className="text-center">{op.moneda || "MN"}</td>
+                    <td className="text-center">{r.tipo}</td>
+                    <td>{r.marca}</td>
+                    <td>{r.proveedor}</td>
+                    <td>{r.codigo}</td>
+                    <td className="text-end">{formatMoney(r.precioUnitario)}</td>
+                    <td className="text-end fw-bold">{formatMoney(r.importeTotal)}</td>
+                    <td className="text-center">{r.moneda}</td>
                     <td className="text-end">
-                      {(op.moneda || "MN") === "USD"
-                        ? Number(op.tipoCambio || 0).toFixed(4)
+                      {(r.moneda || "MN") === "USD"
+                        ? Number(r.tipoCambio || 0).toFixed(4)
                         : "-"}
                     </td>
-                    <td>{op.tiempoEntrega || "-"}</td>
-                    <td>{op.observaciones || "-"}</td>
+                    <td>{r.tiempoEntrega}</td>
+                    <td>{r.observaciones}</td>
                     <td className="text-center">
                       <button
                         type="button"
                         className="btn btn-outline-danger btn-sm w-100"
                         onClick={() => handleQuitarSeleccion(idx)}
+                        disabled={readOnly}
                       >
                         Quitar
                       </button>
@@ -547,6 +624,7 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
                 );
               })}
             </tbody>
+
             <tfoot>
               <tr>
                 <td colSpan={8} className="text-end fw-bold">Total:</td>
@@ -557,195 +635,16 @@ export default function VehiculoRequisicionDiagnostico({ orden, onSaved, onGoPre
           </table>
         </div>
 
-        {/* ── MANO DE OBRA ── */}
-        <h5 className="text-center mb-3 fw-bold">MANO DE OBRA</h5>
-
-        <div className="table-responsive mb-3">
-          <table className="table table-bordered table-sm align-middle">
-            <thead className="table-light text-center">
-              <tr>
-                <th>Reparación / Servicio</th>
-                <th>Mecánico / Carrocero</th>
-                <th>Horas</th>
-                <th>Fecha de Pago</th>
-                <th>Observaciones</th>
-                <th style={{ width: "70px" }}>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {moRows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center text-muted">
-                    No hay registros de mano de obra.
-                  </td>
-                </tr>
-              )}
-              {moRows.map((m, idx) => (
-                <tr key={idx}>
-                  <td>{m.concepto}</td>
-                  <td className="text-center">
-                    {m.esCarroceria
-                      ? carroceros.find((x) => x._id === m.carrocero)?.nombre || m.carrocero || "—"
-                      : mecanicos.find((x) => x._id === m.mecanico)?.nombre   || m.mecanico  || "—"}
-                  </td>
-                  <td className="text-center">{m.horas}</td>
-                  <td className="text-center">{formatFecha(m.fechaPago)}</td>
-                  <td>{m.observaciones}</td>
-                  <td className="text-center">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      onClick={() => removeMoRow(idx)}
-                    >
-                      Borrar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Formulario agregar MO */}
-        <div className="card border-primary mb-4">
-          <div className="card-header bg-primary text-white fw-semibold">
-            Agregar Mano de Obra
-          </div>
-          <div className="card-body">
-            <div className="row g-2 mb-2">
-              <div className="col-md-5">
-                <label className="form-label form-label-sm mb-1">Reparación / Servicio</label>
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  name="concepto"
-                  placeholder="Concepto o servicio..."
-                  value={moLine.concepto}
-                  onChange={handleMoLineChange}
-                />
-              </div>
-              <div className="col-md-3">
-                <label className="form-label form-label-sm mb-1">
-                  {moLine.esCarroceria ? "Carrocero" : "Mecánico"}
-                </label>
-                {moLine.esCarroceria ? (
-                  <select
-                    className="form-select form-select-sm"
-                    name="carrocero"
-                    value={moLine.carrocero}
-                    onChange={handleMoLineChange}
-                  >
-                    <option value="">-- Seleccionar carrocero --</option>
-                    {carroceros.map((c) => (
-                      <option key={c._id} value={c._id}>{c.nombre}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    className="form-select form-select-sm"
-                    name="mecanico"
-                    value={moLine.mecanico}
-                    onChange={handleMoLineChange}
-                  >
-                    <option value="">-- Seleccionar --</option>
-                    {mecanicos.map((m) => (
-                      <option key={m._id} value={m._id}>{m.nombre}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="col-md-2">
-                <label className="form-label form-label-sm mb-1">Horas</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  className="form-control form-control-sm"
-                  name="horas"
-                  value={moLine.horas}
-                  onChange={handleMoLineChange}
-                />
-              </div>
-              <div className="col-md-2">
-                <label className="form-label form-label-sm mb-1">Fecha de Pago</label>
-                <input
-                  type="date"
-                  className="form-control form-control-sm"
-                  name="fechaPago"
-                  value={moLine.fechaPago}
-                  onChange={handleMoLineChange}
-                />
-              </div>
-            </div>
-            <div className="row g-2 mb-2">
-              <div className="col-md-8">
-                <label className="form-label form-label-sm mb-1">Observaciones</label>
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  name="observaciones"
-                  value={moLine.observaciones}
-                  onChange={handleMoLineChange}
-                />
-              </div>
-              <div className="col-md-4 d-flex align-items-end">
-                <div className="form-check ms-2">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    id="esCarroceriaCheck"
-                    name="esCarroceria"
-                    checked={moLine.esCarroceria}
-                    onChange={handleMoLineChange}
-                  />
-                  <label className="form-check-label fw-semibold" htmlFor="esCarroceriaCheck">
-                    ¿Trabajo de Carrocería?
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="d-flex justify-content-end mt-2">
-              <button
-                type="button"
-                className="btn btn-primary btn-sm px-4"
-                onClick={addMoRow}
-              >
-                + Agregar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── BOTONES DE ACCIÓN ── */}
-        <div className="d-flex justify-content-between align-items-center border-top pt-3 mt-2">
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={handleRegresarRefaccionaria}
-            disabled={saving}
-          >
-            Regresar a Refaccionaria
-          </button>
-          <div className="d-flex gap-2">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleGuardarSeleccion}
-              disabled={saving}
-            >
-              {saving ? "Guardando..." : "Guardar selección"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleContinuarPresupuesto}
-              disabled={saving}
-            >
-              {saving ? "Guardando..." : "Continuar a Presupuesto →"}
-            </button>
-          </div>
-        </div>
-
       </div>
     </div>
+
+    <EditarDiagnosticoModal
+      key={editEntry?._id || "closed"}
+      entry={editEntry}
+      saving={savingEdit}
+      onSave={handleGuardarEdicionHistorial}
+      onClose={() => setEditEntry(null)}
+    />
+    </>
   );
 }

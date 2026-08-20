@@ -3,6 +3,18 @@ import { useNavigate } from "react-router-dom";          // 👈 NUEVO
 import { listCustomers } from "../../api/customers";
 import "../../styles/clientes.css";
 
+function nombreCliente(c) {
+  if (c.tipoCliente === "Empresa Gobierno") {
+    return c.gobierno?.nombreGobierno || "-";
+  }
+  if (c.tipoCliente === "Empresa Privada" || c.tipoCliente === "Empresa Arrendadora") {
+    return c.empresa?.razonSocial || "-";
+  }
+  return (
+    [c.nombre, c.apellidoPaterno, c.apellidoMaterno].filter(Boolean).join(" ") || "-"
+  );
+}
+
 export default function ConsultaClientes() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState([]);
@@ -86,16 +98,27 @@ export default function ConsultaClientes() {
         {rows.map((c) => (
           <div className="trow" key={c._id}>
             <div>
-              {[c.nombre, c.apellidoPaterno, c.apellidoMaterno]
-                .filter(Boolean)
-                .join(" ")}
+              {nombreCliente(c)}
+              {c.esEmpleado && (
+                <span className="badge bg-info-subtle text-info-emphasis ms-2">Empleado</span>
+              )}
             </div>
-            <div>{c.email || "—"}</div>
+            <div>
+              {c.emails?.[0] || c.email || "—"}
+              {c.emails?.length > 1 && <span className="text-muted small ms-1">+{c.emails.length - 1}</span>}
+            </div>
             <div>{c.rfc || "—"}</div>
             <div>
-              {c.celular?.lada
-                ? `(${c.celular.lada}) ${c.celular.numero}`
-                : c.telefono?.numero || "—"}
+              {(() => {
+                const tel = c.celulares?.[0] || c.celular || c.telefonos?.[0] || c.telefono;
+                const extra = (c.celulares?.length || 0) + (c.telefonos?.length || 0) - (tel ? 1 : 0);
+                return (
+                  <>
+                    {tel?.numero ? (tel.lada ? `(${tel.lada}) ${tel.numero}` : tel.numero) : "—"}
+                    {extra > 0 && <span className="text-muted small ms-1">+{extra}</span>}
+                  </>
+                );
+              })()}
             </div>
             <div>{c.direccion?.ciudad || "—"}</div>
             <div>

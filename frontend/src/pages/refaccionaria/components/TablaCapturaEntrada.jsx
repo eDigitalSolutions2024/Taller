@@ -172,7 +172,16 @@ export default function TablaCapturaEntrada({ entradaId }) {
         }
       }
 
-      alert("¡Captura guardada correctamente!");
+      const respFin = await fetch(`${API}/entradas/${entradaId}/finalizar`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!respFin.ok) {
+        const msg = await safeMsg(respFin);
+        throw new Error(msg || "Se guardó la captura pero no se pudo finalizar la entrada.");
+      }
+
+      alert("¡Captura guardada y entrada finalizada correctamente!");
       setRows([nuevaFila()]);
     } catch (e) {
       console.error(e);

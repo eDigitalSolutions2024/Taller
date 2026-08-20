@@ -41,6 +41,9 @@ exports.login = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: 'Credenciales inválidas' });
+    if (user.isActive === false) {
+      return res.status(401).json({ message: 'Esta cuenta fue desactivada.' });
+    }
 
     if (
       workshopName &&

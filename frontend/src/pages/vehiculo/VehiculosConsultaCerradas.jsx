@@ -1,12 +1,14 @@
 // src/pages/vehiculo/VehiculoConsultaCerradas.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listOrdenesServicio } from "../../api/vehiculos";
+import { listOrdenesServicio, restoreOrden } from "../../api/vehiculos";
+import { getUser } from "../../auth";
 
 const PAGE_SIZE = 10;
 
 export default function VehiculoConsultaCerradas() {
   const navigate = useNavigate();
+  const esAdmin = getUser()?.role === "admin";
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -15,6 +17,7 @@ export default function VehiculoConsultaCerradas() {
   const [searchOs, setSearchOs] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [restaurandoId, setRestaurandoId] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -54,6 +57,20 @@ export default function VehiculoConsultaCerradas() {
   const handleRowDblClick = (ordenId) => {
     if (!ordenId) return;
     navigate(`/vehiculo/orden/${ordenId}?tab=general`);
+  };
+
+  const handleRestablecer = async (ordenId) => {
+    if (!window.confirm("¿Restablecer esta orden a su estado anterior?")) return;
+    try {
+      setRestaurandoId(ordenId);
+      await restoreOrden(ordenId);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.msg || "Error al restablecer la orden.");
+    } finally {
+      setRestaurandoId(null);
+    }
   };
 
 
@@ -118,12 +135,13 @@ export default function VehiculoConsultaCerradas() {
               <th style={{ width: 130 }}>Fecha Cierre</th>
               {/* 👇 nueva columna */}
               <th style={{ width: 110 }}>Estatus</th>
+              {esAdmin && <th style={{ width: 130 }}>Acciones</th>}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={10} className="text-center">
+                <td colSpan={esAdmin ? 11 : 10} className="text-center">
                   No hay órdenes cerradas que coincidan con la búsqueda.
                 </td>
               </tr>
@@ -150,7 +168,12 @@ export default function VehiculoConsultaCerradas() {
                   style={{ cursor: "pointer" }}
                 >
                   <td>{o.ordenServicio || o._id}</td>
-                  <td>{clienteNombre}</td>
+                  <td>
+                    {clienteNombre}
+                    {o.cliente?.esEmpleado && (
+                      <span className="badge bg-info-subtle text-info-emphasis ms-2">Empleado</span>
+                    )}
+                  </td>
                   <td>
                     {(o.marca || "") + (o.modelo ? ` / ${o.modelo}` : "")}
                   </td>
@@ -170,6 +193,21 @@ export default function VehiculoConsultaCerradas() {
                   </td>
                   {/* 👇 muestra estadoOrden (debería salir CERRADA) */}
                   <td>{o.estadoOrden || ""}</td>
+                  {esAdmin && (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-warning btn-sm"
+                        disabled={restaurandoId === o._id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRestablecer(o._id);
+                        }}
+                      >
+                        {restaurandoId === o._id ? "Restableciendo..." : "Restablecer"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}

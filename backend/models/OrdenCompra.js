@@ -27,11 +27,10 @@ const ordenCompraSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Orden / vehículo al que pertenece
+    // Orden / vehículo al que pertenece (no aplica en compras manuales/directas)
     orden: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vehiculo',
-      required: true,
     },
 
     // normalmente 1 proveedor por OC
@@ -40,6 +39,15 @@ const ordenCompraSchema = new mongoose.Schema(
       trim: true,
     },
 
+    proveedorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Proveedor',
+    },
+
+    // Domicilio del proveedor al momento de generar la OC (queda fijo aunque
+    // el proveedor cambie de dirección después).
+    domicilioProveedor: { type: String, trim: true, default: '' },
+
     lineas: [lineaOCSchema],
 
     estatus: {
@@ -47,6 +55,11 @@ const ordenCompraSchema = new mongoose.Schema(
       enum: ['PENDIENTE', 'EN_PROCESO', 'COMPRADO', 'CANCELADO'],
       default: 'PENDIENTE',
     },
+
+    // Quién entrega la OC (usuario que la genera) y quién la recibe (queda
+    // en blanco para firma física).
+    entrega: { type: String, trim: true, default: '' },
+    recibe: { type: String, trim: true, default: '' },
 
     creadoPor: {
       type: mongoose.Schema.Types.ObjectId,

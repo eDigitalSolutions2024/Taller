@@ -89,55 +89,76 @@ const ClienteSchema = new Schema(
     nombre: { type: String, trim: true },
     apellidoPaterno: { type: String, trim: true },
     apellidoMaterno: { type: String, trim: true },
-    emails: [{ type: String, trim: true, lowercase: true }],
-    telefonos: { type: [TelefonoSchema], default: [] },
-    celulares: { type: [TelefonoSchema], default: [] },
-
+    email: { type: String, trim: true, lowercase: true },
+    telefono: { type: TelefonoSchema, default: undefined },
+    celular: { type: TelefonoSchema, default: undefined },
+    // Listas completas (el primer elemento espeja email/telefono/celular de
+    // arriba, para no romper a quien todavía lee el campo singular).
+    emails: { type: [String], default: undefined },
+    telefonos: { type: [TelefonoSchema], default: undefined },
+    celulares: { type: [TelefonoSchema], default: undefined },
+    pais: { type: String, trim: true, default: "México" },
+    // Controla si se piden/muestran RFC, régimen fiscal, etc. Por defecto
+    // true en documentos ya existentes con RFC capturado (ver pre-validate).
     requiereFacturacion: { type: Boolean, default: false },
+
+    // Fiscal/ubicación comunes
     rfc: { type: String, trim: true, uppercase: true },
+    // Fiscal CFDI (lo mínimo para timbrar)
     regimenFiscal: {
       type: String,
       trim: true,
       enum: [
-        "601","602","603","604","605","606","607","608","609","610",
-        "611","612","613","614","615","616","617","618","619","620",
-        "621","622","623","624","625","626"
+        "601","603","605","606","607","608","610","611",
+        "612","614","615","616","620","621","622","623",
+        "624","625","626"
       ]
     },
     codigoPostalFiscal: { type: String, trim: true, default: "" },
     direccion: { type: DireccionSchema, default: undefined },
-    facturacion: { type: FacturacionSchema, default: undefined },
+    facturacion: { type: FacturacionSchema, default: () => ({ mismaQueDireccion: true }) },
 
+    // Extra
     asesorResponsable: { type: String, trim: true },
     condicionesPago: { type: String, trim: true },
     observaciones: { type: String, trim: true },
-    pais: { type: String, trim: true, default: "México" },
+    esEmpleado: { type: Boolean, default: false },
 
-    empresa: { type: EmpresaSchema, default: undefined },
-    gobierno: { type: GobiernoSchema, default: undefined },
+    // Ramas por tipo
+    empresa: { type: EmpresaSchema, default: undefined },   // Privada / Arrendadora
+    gobierno: { type: GobiernoSchema, default: undefined }, // Gobierno
   },
   { timestamps: true }
 );
 
 /* ---------- Índices para búsqueda de texto ---------- */
+// Permite buscar por nombre/apellidos, email, RFC, razón social, gobierno y dependencia
 ClienteSchema.index({
   nombre: "text",
   apellidoPaterno: "text",
   apellidoMaterno: "text",
-  emails: "text",
+  email: "text",
   rfc: "text",
   "empresa.razonSocial": "text",
   "gobierno.nombreGobierno": "text",
   "gobierno.dependencia.nombre": "text",
 });
 
-/* ---------- Normalización ---------- */
+/* ---------- Normalización y validaciones ---------- */
+
+// Asegura mayúsculas en RFC y minúsculas en email (por si llegan sin normalizar)
 ClienteSchema.pre("save", function (next) {
   if (this.rfc) this.rfc = String(this.rfc).toUpperCase().trim();
-  if (this.emails?.length) {
-    this.emails = this.emails.map(e => String(e).toLowerCase().trim());
-  }
+  if (this.email) this.email = String(this.email).toLowerCase().trim();
 
+  // El primer elemento de cada lista espeja el campo singular, para que
+  // pantallas que todavía leen email/telefono/celular directo (p. ej. al
+  // prellenar una orden nueva) sigan viendo el dato principal.
+  if (this.emails?.length) this.email = this.emails[0] || this.email;
+  if (this.telefonos?.length) this.telefono = this.telefonos[0] || this.telefono;
+  if (this.celulares?.length) this.celular = this.celulares[0] || this.celular;
+
+  // Si facturación “mismaQueDireccion” y no hay dirección copiada, duplica
   if (
     this.facturacion &&
     this.facturacion.mismaQueDireccion &&

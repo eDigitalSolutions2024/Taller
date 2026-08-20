@@ -169,13 +169,37 @@ function buildOrdenHtml(vehiculo, serviciosDocs = []) {
   const horaRecepcion =
     vehiculo.horaRecepcion || fmtHora(vehiculo.fechaRecepcion);
 
-  const direccionCompleta = fmtDireccionFull(direccion, {
+  // Nombre a mostrar: empresas/gobierno usan nombreGobierno; particulares
+  // componen nombre + apellidos (snapshot plano en la propia orden).
+  const nombreClienteCompleto =
+    nombreGobierno ||
+    [vehiculo.nombreCliente, vehiculo.apellidoPaterno, vehiculo.apellidoMaterno]
+      .filter(Boolean)
+      .join(' ');
+
+  const asesorNombre = vehiculo.creadoPor || 'admin';
+
+  const correoCliente =
+    (Array.isArray(vehiculo.correos) && vehiculo.correos.filter(Boolean).join(', ')) ||
+    correo ||
+    '';
+
+  const telefonoCliente =
+    [vehiculo.telefonoFijoLada, telefonoFijo].filter(Boolean).join(' ') ||
+    [vehiculo.celularLada, celular].filter(Boolean).join(' ') ||
+    '';
+
+  const direccionBase = fmtDireccionFull(direccion, {
     numeroExt,
     numeroInt,
     colonia,
     ciudad,
     estado,
   });
+  const direccionCompleta =
+    typeof direccion === 'string' && direccion
+      ? [direccion, numeroExt, numeroInt, colonia, ciudad, estado].filter(Boolean).join(' ')
+      : direccionBase;
 
   return `
 <!DOCTYPE html>
@@ -305,7 +329,7 @@ function buildOrdenHtml(vehiculo, serviciosDocs = []) {
         </div>
       </td>
       <td style="width: 40mm; text-align: right; font-size: 9px; vertical-align: top;">
-        <div class="small"><span class="label">ASESOR:</span> admin</div>
+        <div class="small"><span class="label">ASESOR:</span> ${esc(asesorNombre)}</div>
       </td>
     </tr>
   </table>
@@ -314,7 +338,7 @@ function buildOrdenHtml(vehiculo, serviciosDocs = []) {
   <table style="margin-top:4px;">
     <tr>
       <td class="grey-header" style="width:23%;">NOMBRE DEL CLIENTE:</td>
-      <td style="width:47%;">${esc(nombreGobierno)}</td>
+      <td style="width:47%;">${esc(nombreClienteCompleto)}</td>
       <td class="orden-label" style="width:15%;">ORDEN DE SERVICIO:</td>
       <td class="orden-label" style="width:15%;"><span class="orden-num">${esc(
         ordenServicio
@@ -324,13 +348,13 @@ function buildOrdenHtml(vehiculo, serviciosDocs = []) {
       <td class="grey-header">FECHA DE RECEPCIÓN:</td>
       <td>${esc(fechaRecepcion)} A LAS ${esc(horaRecepcion)} hrs</td>
       <td class="grey-header">CORREO</td>
-      <td>${esc(correo)}</td>
+      <td>${esc(correoCliente)}</td>
     </tr>
     <tr>
       <td class="grey-header">RFC:</td>
       <td>${esc(rfc)}</td>
       <td class="grey-header">TELÉFONO</td>
-      <td>${esc(telefonoFijo || celular || '')}</td>
+      <td>${esc(telefonoCliente)}</td>
     </tr>
     <tr>
       <td class="grey-header">DIRECCIÓN:</td>

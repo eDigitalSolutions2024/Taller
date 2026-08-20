@@ -1,33 +1,62 @@
 // src/pages/vehiculo/ServicioReparacionTab.jsx
-import React, { useEffect, useState } from "react";
-import { updateServicioReparacion, saveRequisicionDiagnostico } from "../../api/vehiculos";
-import { fetchServiciosTaller } from "../../api/codigos";
-
-const GRUPO_LABELS = {
-  motor:      "Mantenimiento del motor",
-  lubricacion: "Lubricación",
-  revision:   "Revisión",
-  otros:      "Otros servicios",
-};
-
-const GRUPO_ORDER = ["motor", "lubricacion", "revision", "otros"];
+import React, { useEffect, useRef, useState } from "react";
+import { updateServicioReparacion, saveRequisicionDiagnostico, omitirRefacciones } from "../../api/vehiculos";
+import { listServiciosCatalogoOptions } from "../../api/serviciosCatalogo";
 
 const emptyForm = {
   serviciosSeleccionados: [],
   fallasReportadasCliente: "",
   infoLlantas: "",
   revisionFallas: "",
+  fallasMotorOtros: "",
+  sistemaElectricoAire: "",
+  suspensionDireccionFrenos: "",
+  sistemaEnfriamiento: "",
 };
 
-export default function ServicioReparacionTab({ ordenId, initialData, onSaved, yaCerrada }) {
-  const [form, setForm] = useState(emptyForm);
-  const [catalogoServicios, setCatalogoServicios] = useState([]);
-  const [cargandoServicios, setCargandoServicios] = useState(false);
+const PDF_SECTIONS = [
+  { label: "Fallas de motor y otros",                textKey: "fallasMotorOtros" },
+  { label: "Sistema eléctrico y aire acondicionado", textKey: "sistemaElectricoAire" },
+  { label: "Suspensión, dirección y frenos",         textKey: "suspensionDireccionFrenos" },
+  { label: "Sistema de enfriamiento",                textKey: "sistemaEnfriamiento" },
+];
 
+export default function ServicioReparacionTab({
+  ordenId,
+  initialData,
+  existingRefacciones = [],
+  serviciosCatalogoSeleccionados = [],
+  onSaved,
+  readOnly = false,
+  sinVehiculo = false,
+}) {
+  const [form, setForm] = useState(emptyForm);
+  const [activePdf, setActivePdf] = useState({
+    fallasMotorOtros: false,
+    sistemaElectricoAire: false,
+    suspensionDireccionFrenos: false,
+    sistemaEnfriamiento: false,
+  });
+
+  // Catálogo de Servicios (paquetes de refacciones) — Refaccionaria → Servicios
+  const [catalogoBundles, setCatalogoBundles] = useState([]);
+  const [cargandoBundles, setCargandoBundles] = useState(false);
+  // Selección de trabajo en esta pestaña: copia local (snapshot) de los bundles
+  // elegidos, editable (excluir opcionales, agregar observación) antes de enviar.
+  const [seleccionBundles, setSeleccionBundles] = useState([]);
+  const [enviandoCatalogo, setEnviandoCatalogo] = useState(false);
+
+  // Modal de solicitud de refacciones
   const [showModal, setShowModal] = useState(false);
   const [refacciones, setRefacciones] = useState([{ refaccion: "", cantidad: 1 }]);
   const [guardandoRefacciones, setGuardandoRefacciones] = useState(false);
 
+  // Modal de omitir refacciones (continuar solo con servicios)
+  const [showOmitirModal, setShowOmitirModal] = useState(false);
+  const [serviciosOmitir, setServiciosOmitir] = useState([{ concepto: "", cantidad: 1 }]);
+  const [guardandoOmitir, setGuardandoOmitir] = useState(false);
+
+  // Cargar datos existentes de la orden
   useEffect(() => {
     if (initialData) {
       setForm({
@@ -35,60 +64,147 @@ export default function ServicioReparacionTab({ ordenId, initialData, onSaved, y
         fallasReportadasCliente: initialData.fallasReportadasCliente || "",
         infoLlantas: initialData.infoLlantas || "",
         revisionFallas: initialData.revisionFallas || "",
+        fallasMotorOtros: initialData.fallasMotorOtros || "",
+        sistemaElectricoAire: initialData.sistemaElectricoAire || "",
+        suspensionDireccionFrenos: initialData.suspensionDireccionFrenos || "",
+        sistemaEnfriamiento: initialData.sistemaEnfriamiento || "",
+      });
+      setActivePdf({
+        fallasMotorOtros: !!initialData.fallasMotorOtros,
+        sistemaElectricoAire: !!initialData.sistemaElectricoAire,
+        suspensionDireccionFrenos: !!initialData.suspensionDireccionFrenos,
+        sistemaEnfriamiento: !!initialData.sistemaEnfriamiento,
       });
     }
   }, [initialData]);
 
+  // Cargar catálogo de Servicios (paquetes de refacciones)
   useEffect(() => {
     const cargar = async () => {
       try {
-        setCargandoServicios(true);
-        const servicios = await fetchServiciosTaller();
-        setCatalogoServicios(servicios);
+        setCargandoBundles(true);
+        const { data } = await listServiciosCatalogoOptions();
+        setCatalogoBundles(data?.data || []);
       } catch (err) {
-        console.error("Error cargando servicios:", err);
+        console.error("Error cargando catálogo de servicios:", err);
       } finally {
-        setCargandoServicios(false);
+        setCargandoBundles(false);
       }
     };
     cargar();
   }, []);
 
-  const serviciosPorGrupo = GRUPO_ORDER.reduce((acc, grupo) => {
-    const items = catalogoServicios.filter(
-      (s) => (s.grupoServicio || "otros") === grupo
-    );
-    if (items.length > 0) acc[grupo] = items;
-    return acc;
-  }, {});
+  // ===== Selección de Servicios de catálogo (paquetes de refacciones) =====
+  const bundleSeleccionado = (servicioId) =>
+    seleccionBundles.find((b) => b.servicioId === servicioId);
 
-  const toggleServicio = (codigo) => {
-    if (yaCerrada) return;
-    setForm((prev) => {
-      const yaEsta = prev.serviciosSeleccionados.includes(codigo);
-      return {
+  const toggleBundle = (bundle) => {
+    setSeleccionBundles((prev) => {
+      const yaEsta = prev.some((b) => b.servicioId === bundle._id);
+      if (yaEsta) {
+        return prev.filter((b) => b.servicioId !== bundle._id);
+      }
+      // Snapshot local: copia independiente del catálogo, editable sin afectarlo.
+      return [
         ...prev,
-        serviciosSeleccionados: yaEsta
-          ? prev.serviciosSeleccionados.filter((c) => c !== codigo)
-          : [...prev.serviciosSeleccionados, codigo],
-      };
+        {
+          servicioId: bundle._id,
+          nombre: bundle.nombre,
+          refacciones: (bundle.refacciones || []).map((r) => ({
+            nombre: r.nombre,
+            obligatoria: !!r.obligatoria,
+            incluida: true,
+            observacion: "",
+          })),
+        },
+      ];
     });
   };
 
-  // ===== Solicitud de refacciones =====
-  const agregarRefaccion = () =>
-    setRefacciones((prev) => [...prev, { refaccion: "", cantidad: 1 }]);
+  const toggleRefaccionIncluida = (servicioId, refIdx) => {
+    setSeleccionBundles((prev) =>
+      prev.map((b) => {
+        if (b.servicioId !== servicioId) return b;
+        return {
+          ...b,
+          refacciones: b.refacciones.map((r, i) =>
+            i === refIdx && !r.obligatoria ? { ...r, incluida: !r.incluida } : r
+          ),
+        };
+      })
+    );
+  };
 
-  const eliminarRefaccion = (idx) =>
-    setRefacciones((prev) => prev.filter((_, i) => i !== idx));
+  const cambiarObservacionRefaccion = (servicioId, refIdx, value) => {
+    setSeleccionBundles((prev) =>
+      prev.map((b) => {
+        if (b.servicioId !== servicioId) return b;
+        return {
+          ...b,
+          refacciones: b.refacciones.map((r, i) => (i === refIdx ? { ...r, observacion: value } : r)),
+        };
+      })
+    );
+  };
+
+  const handleEnviarServiciosCatalogo = async () => {
+    if (!ordenId || seleccionBundles.length === 0) return;
+    try {
+      setEnviandoCatalogo(true);
+      await updateServicioReparacion(ordenId, form);
+      const res = await omitirRefacciones(ordenId, { serviciosCatalogo: seleccionBundles });
+
+      alert("Servicios registrados. La orden continúa directo a presupuesto sin pasar por refaccionaria.");
+      setSeleccionBundles([]);
+
+      if (onSaved && res?.data?.vehiculo) {
+        onSaved(res.data.vehiculo);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al enviar los servicios seleccionados.");
+    } finally {
+      setEnviandoCatalogo(false);
+    }
+  };
+
+  // ===== Auto-guardado =====
+  const [autoSaveStatus, setAutoSaveStatus] = useState(null); // null | 'saving' | 'saved'
+  const autoSaveTimerRef = useRef(null);
+  const isFirstRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (!ordenId || readOnly) return;
+
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAutoSaveStatus("saving");
+        await updateServicioReparacion(ordenId, form);
+        setAutoSaveStatus("saved");
+        setTimeout(() => setAutoSaveStatus(null), 2000);
+      } catch (err) {
+        console.error(err);
+        setAutoSaveStatus(null);
+      }
+    }, 1500);
+
+    return () => clearTimeout(autoSaveTimerRef.current);
+  }, [form, ordenId, readOnly]);
+
+  // ===== Solicitud de refacciones =====
+  const agregarRefaccion = () => setRefacciones((prev) => [...prev, { refaccion: "", cantidad: 1 }]);
+
+  const eliminarRefaccion = (idx) => setRefacciones((prev) => prev.filter((_, i) => i !== idx));
 
   const cambiarRefaccion = (idx, field, value) =>
     setRefacciones((prev) =>
-      prev.map((item, i) =>
-        i === idx
-          ? { ...item, [field]: field === "cantidad" ? Number(value || 0) : value }
-          : item
-      )
+      prev.map((item, i) => (i === idx ? { ...item, [field]: field === "cantidad" ? Number(value || 0) : value } : item))
     );
 
   const handleEnviarRefacciones = async () => {
@@ -116,18 +232,12 @@ export default function ServicioReparacionTab({ ordenId, initialData, onSaved, y
     try {
       setGuardandoRefacciones(true);
 
-      // Guardar el servicio con mano de obra generada
-      const manoObraGenerada = form.serviciosSeleccionados.map((codigo) => {
-        const srv = catalogoServicios.find((s) => s.codigo === codigo);
-        return {
-          concepto: srv ? (srv.descripcion || srv.label) : `Servicio ${codigo}`,
-        };
-      });
-      await updateServicioReparacion(ordenId, { ...form, manoObraGenerada });
+      // 1. Guardar el servicio primero
+      await updateServicioReparacion(ordenId, form);
 
-      // Enviar refacciones a refaccionaria
+      // 2. Conservar todas las existentes y agregar las nuevas al final
       const res = await saveRequisicionDiagnostico(ordenId, {
-        refacciones: validas,
+        refacciones: [...existingRefacciones, ...validas],
         estadoOrden: "PENDIENTE_REFACCIONARIA",
       });
 
@@ -146,143 +256,265 @@ export default function ServicioReparacionTab({ ordenId, initialData, onSaved, y
     }
   };
 
+  // ===== Omitir refacciones (continuar solo con servicios) =====
+  const agregarServicioOmitir = () => setServiciosOmitir((prev) => [...prev, { concepto: "", cantidad: 1 }]);
+
+  const eliminarServicioOmitir = (idx) => setServiciosOmitir((prev) => prev.filter((_, i) => i !== idx));
+
+  const cambiarServicioOmitir = (idx, field, value) =>
+    setServiciosOmitir((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, [field]: field === "cantidad" ? Number(value || 0) : value } : item))
+    );
+
+  const handleOmitirRefacciones = async () => {
+    if (!ordenId) return;
+    const validos = serviciosOmitir
+      .filter((s) => s.concepto.trim() && Number(s.cantidad) > 0)
+      .map((s) => ({ concepto: s.concepto.trim(), cant: Number(s.cantidad) }));
+
+    if (validos.length === 0) {
+      alert("Agrega al menos un servicio a realizar.");
+      return;
+    }
+
+    try {
+      setGuardandoOmitir(true);
+
+      // 1. Guardar el servicio primero
+      await updateServicioReparacion(ordenId, form);
+
+      // 2. Registrar los servicios y avanzar la orden sin pasar por refaccionaria
+      const res = await omitirRefacciones(ordenId, { servicios: validos });
+
+      alert("Servicios registrados. La orden continúa directo a presupuesto sin pasar por refaccionaria.");
+      setShowOmitirModal(false);
+      setServiciosOmitir([{ concepto: "", cantidad: 1 }]);
+
+      if (onSaved && res?.data?.vehiculo) {
+        onSaved(res.data.vehiculo);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al omitir las refacciones.");
+    } finally {
+      setGuardandoOmitir(false);
+    }
+  };
+
   return (
     <>
-      <div className="card">
-        <div className="card-header fw-bold text-center bg-light d-flex justify-content-between align-items-center">
-          <span>SERVICIO O REPARACIÓN</span>
-          {yaCerrada && <span className="badge bg-secondary">Solo Lectura</span>}
-        </div>
+      <div>
+        <div className="card">
+          <div className="card-header fw-bold text-center bg-light">SERVICIO O REPARACIÓN</div>
 
-        <div className="card-body">
+          <div className="card-body">
+            {/* ===== FALLAS REPORTADAS POR EL CLIENTE ===== */}
+            {!sinVehiculo && (
+              <>
+                <div className="mb-4">
+                  <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
+                    Fallas reportadas por el cliente
+                  </h6>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    placeholder="Describe las fallas o síntomas que reportó el cliente..."
+                    value={form.fallasReportadasCliente}
+                    readOnly={readOnly}
+                    onChange={(e) => setForm((prev) => ({ ...prev, fallasReportadasCliente: e.target.value }))}
+                  />
+                </div>
 
-          {/* ===== SERVICIOS DESDE BD CÓDIGOS ===== */}
-          <div className="mb-4">
-            <h6 className="fw-bold text-uppercase mb-3 border-bottom pb-2">
-              Servicios realizados
-            </h6>
-
-            {cargandoServicios && (
-              <p className="text-muted">Cargando servicios...</p>
+                {/* ===== INFORMACIÓN DE LLANTAS ===== */}
+                <div className="mb-4">
+                  <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">Información de llantas</h6>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    placeholder="Estado de las llantas, medidas, observaciones..."
+                    value={form.infoLlantas}
+                    readOnly={readOnly}
+                    onChange={(e) => setForm((prev) => ({ ...prev, infoLlantas: e.target.value }))}
+                  />
+                </div>
+              </>
             )}
 
-            {!cargandoServicios && catalogoServicios.length === 0 && (
-              <div className="alert alert-warning py-2">
-                No hay servicios dados de alta en BD de Códigos. Da de alta servicios en el módulo{" "}
-                <strong>Refaccionaria → BD Códigos</strong>.
-              </div>
-            )}
+            {/* ===== OBSERVACIONES GENERALES ===== */}
+            <div className="mb-4">
+              <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">Observaciones generales</h6>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder="Observaciones adicionales sobre el servicio o reparación..."
+                value={form.revisionFallas}
+                readOnly={readOnly}
+                onChange={(e) => setForm((prev) => ({ ...prev, revisionFallas: e.target.value }))}
+              />
+            </div>
 
-            {!cargandoServicios &&
-              Object.entries(serviciosPorGrupo).map(([grupo, items]) => (
-                <div key={grupo} className="mb-3">
-                  <p className="text-muted small fw-semibold text-uppercase mb-2">
-                    {GRUPO_LABELS[grupo] || grupo}
-                  </p>
-                  <div className="d-flex flex-wrap gap-2">
-                    {items.map((srv) => {
-                      const activo = form.serviciosSeleccionados.includes(srv.codigo);
-                      return (
-                        <button
-                          key={srv._id || srv.codigo}
-                          type="button"
-                          onClick={() => toggleServicio(srv.codigo)}
-                          disabled={yaCerrada}
-                          className={
-                            "btn btn-sm " +
-                            (activo ? "btn-primary" : "btn-outline-secondary")
-                          }
-                          title={srv.descripcion}
-                        >
-                          {srv.descripcion || srv.label}
-                        </button>
-                      );
-                    })}
+            {/* ===== CAMPOS PARA EL PDF OPERATIVO ===== */}
+            {!sinVehiculo &&
+              PDF_SECTIONS.map(({ label, textKey }) => (
+                <div className="mb-3" key={textKey}>
+                  <div className="form-check border-bottom pb-2 mb-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id={`chk-${textKey}`}
+                      checked={activePdf[textKey]}
+                      disabled={readOnly}
+                      onChange={(e) => setActivePdf((prev) => ({ ...prev, [textKey]: e.target.checked }))}
+                    />
+                    <label className="form-check-label fw-bold text-uppercase" htmlFor={`chk-${textKey}`}>
+                      {label}
+                    </label>
                   </div>
+                  {activePdf[textKey] && (
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={form[textKey]}
+                      readOnly={readOnly}
+                      onChange={(e) => setForm((prev) => ({ ...prev, [textKey]: e.target.value }))}
+                    />
+                  )}
                 </div>
               ))}
 
-            {/* Resumen de seleccionados */}
-            {form.serviciosSeleccionados.length > 0 && (
-              <div className="mt-2 p-2 bg-light rounded border">
-                <small className="text-muted fw-semibold">Seleccionados: </small>
-                {form.serviciosSeleccionados.map((codigo) => {
-                  const srv = catalogoServicios.find((s) => s.codigo === codigo);
-                  return (
-                    <span key={codigo} className="badge bg-primary me-1">
-                      {codigo}{srv ? ` - ${srv.descripcion}` : ""}
-                    </span>
-                  );
-                })}
+            {/* ===== SERVICIOS (paquetes de refacciones) ===== */}
+            {!sinVehiculo && (
+              <div className="mb-4">
+                <h6 className="fw-bold text-uppercase mb-3 border-bottom pb-2">Servicios</h6>
+
+                {serviciosCatalogoSeleccionados.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-muted small fw-semibold text-uppercase mb-2">
+                      Servicios ya enviados a presupuesto
+                    </p>
+                    {serviciosCatalogoSeleccionados.map((s, idx) => (
+                      <div key={idx} className="border rounded p-2 mb-2 bg-light text-muted">
+                        <div className="text-decoration-line-through fw-semibold">{s.nombre}</div>
+                        <ul className="mb-0 ps-3">
+                          {(s.refacciones || [])
+                            .filter((r) => r.incluida !== false)
+                            .map((r, i) => (
+                              <li key={i} className="text-decoration-line-through small">
+                                {r.nombre}
+                                {r.observacion ? ` — ${r.observacion}` : ""}
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {cargandoBundles && <p className="text-muted">Cargando servicios...</p>}
+
+                {!cargandoBundles && catalogoBundles.length === 0 && (
+                  <div className="alert alert-warning py-2">
+                    No hay servicios dados de alta en el catálogo. Da de alta servicios en el módulo{" "}
+                    <strong>Refaccionaria → Servicios</strong> (solo admins).
+                  </div>
+                )}
+
+                {!cargandoBundles && catalogoBundles.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2">
+                    {catalogoBundles.map((bundle) => {
+                      const seleccion = bundleSeleccionado(bundle._id);
+                      const activo = !!seleccion;
+                      return (
+                        <div
+                          key={bundle._id}
+                          role="button"
+                          onClick={() => !readOnly && toggleBundle(bundle)}
+                          className={"border rounded p-2 " + (activo ? "border-success bg-success-subtle" : "border-secondary")}
+                          style={{ cursor: readOnly ? "default" : "pointer", minWidth: 180 }}
+                        >
+                          <div className="fw-semibold">{bundle.nombre}</div>
+                          <small className="text-muted">{(bundle.refacciones || []).length} refacción(es)</small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Detalle de refacciones de los servicios seleccionados */}
+                {seleccionBundles.map((b) => (
+                  <div key={b.servicioId} className="border rounded p-3 mt-3">
+                    <div className="fw-bold mb-2">{b.nombre}</div>
+                    <table className="table table-sm table-bordered align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Refacción</th>
+                          <th style={{ width: 110 }} className="text-center">Incluir</th>
+                          <th>Observación</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.refacciones.map((r, idx) => (
+                          <tr key={idx}>
+                            <td>
+                              {r.nombre} {r.obligatoria && <span className="badge bg-primary ms-1">Obligatoria</span>}
+                            </td>
+                            <td className="text-center">
+                              <input
+                                type="checkbox"
+                                checked={r.incluida}
+                                disabled={r.obligatoria || readOnly}
+                                onChange={() => toggleRefaccionIncluida(b.servicioId, idx)}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                placeholder="Observación opcional..."
+                                value={r.observacion}
+                                disabled={readOnly}
+                                onChange={(e) => cambiarObservacionRefaccion(b.servicioId, idx, e.target.value)}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+
+                {!readOnly && seleccionBundles.length > 0 && (
+                  <div className="d-flex justify-content-end mt-3">
+                    <button
+                      type="button"
+                      className="btn btn-success px-4"
+                      onClick={handleEnviarServiciosCatalogo}
+                      disabled={enviandoCatalogo}
+                    >
+                      {enviandoCatalogo ? "Enviando..." : "Enviar servicios seleccionados a presupuesto →"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {/* ===== FALLAS REPORTADAS POR EL CLIENTE ===== */}
-          <div className="mb-4">
-            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
-              Fallas reportadas por el cliente
-            </h6>
-            <textarea
-              className="form-control"
-              rows={4}
-              placeholder="Describe las fallas o síntomas que reportó el cliente..."
-              value={form.fallasReportadasCliente}
-              disabled={yaCerrada}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, fallasReportadasCliente: e.target.value }))
-              }
-            />
-          </div>
-
-          {/* ===== INFORMACIÓN DE LLANTAS ===== */}
-          <div className="mb-4">
-            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
-              Información de llantas
-            </h6>
-            <textarea
-              className="form-control"
-              rows={2}
-              placeholder="Estado de las llantas, medidas, observaciones..."
-              value={form.infoLlantas}
-              disabled={yaCerrada}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, infoLlantas: e.target.value }))
-              }
-            />
-          </div>
-
-          {/* ===== OBSERVACIONES GENERALES ===== */}
-          <div className="mb-4">
-            <h6 className="fw-bold text-uppercase mb-2 border-bottom pb-2">
-              Observaciones generales
-            </h6>
-            <textarea
-              className="form-control"
-              rows={3}
-              placeholder="Observaciones adicionales sobre el servicio o reparación..."
-              value={form.revisionFallas}
-              disabled={yaCerrada}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, revisionFallas: e.target.value }))
-              }
-            />
-          </div>
-
-          {/* ===== BOTONES ===== */}
-          <div className="d-flex justify-content-end">
-            {yaCerrada ? (
-              <div className="alert alert-warning d-inline-block mb-0">
-                Esta orden ya ha sido cerrada y no permite modificaciones.
+            {/* ===== BOTONES ===== */}
+            {!readOnly && (
+              <div className="d-flex justify-content-end align-items-center gap-3">
+                {autoSaveStatus === "saving" && <small className="text-muted">Guardando...</small>}
+                {autoSaveStatus === "saved" && <small className="text-success">Guardado</small>}
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-4"
+                  onClick={() => setShowOmitirModal(true)}
+                  title="La orden no pasará por refaccionaria; captura los servicios a realizar"
+                >
+                  Continuar sin refacciones →
+                </button>
+                <button type="button" className="btn btn-primary px-5" onClick={() => setShowModal(true)}>
+                  Solicitar refacciones a refaccionaria →
+                </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary px-5"
-                onClick={() => setShowModal(true)}
-              >
-                Solicitar refacciones a refaccionaria →
-              </button>
             )}
           </div>
         </div>
@@ -290,29 +522,18 @@ export default function ServicioReparacionTab({ ordenId, initialData, onSaved, y
 
       {/* ===== MODAL SOLICITUD DE REFACCIONES ===== */}
       {showModal && (
-        <div
-          className="modal fade show"
-          style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
-          tabIndex="-1"
-        >
+        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }} tabIndex="-1">
           <div className="modal-dialog modal-lg modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title fw-bold">
-                  Solicitar refacciones a refaccionaria
-                </h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={() => setShowModal(false)}
-                  disabled={guardandoRefacciones}
-                />
+                <h5 className="modal-title fw-bold">Solicitar refacciones a refaccionaria</h5>
+                <button type="button" className="btn-close" onClick={() => setShowModal(false)} disabled={guardandoRefacciones} />
               </div>
 
               <div className="modal-body">
                 <p className="text-muted small mb-3">
-                  Indica las refacciones que necesita el vehículo. El refaccionario
-                  recibirá esta solicitud y cotizará las opciones.
+                  Indica las refacciones que necesita el vehículo. El refaccionario recibirá esta solicitud y cotizará
+                  las opciones.
                 </p>
 
                 <table className="table table-sm table-bordered align-middle">
@@ -358,31 +579,95 @@ export default function ServicioReparacionTab({ ordenId, initialData, onSaved, y
                   </tbody>
                 </table>
 
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  onClick={agregarRefaccion}
-                >
+                <button type="button" className="btn btn-outline-secondary btn-sm" onClick={agregarRefaccion}>
                   + Agregar refacción
                 </button>
               </div>
 
               <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowModal(false)}
-                  disabled={guardandoRefacciones}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={guardandoRefacciones}>
                   Cancelar
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleEnviarRefacciones}
-                  disabled={guardandoRefacciones}
-                >
+                <button type="button" className="btn btn-primary" onClick={handleEnviarRefacciones} disabled={guardandoRefacciones}>
                   {guardandoRefacciones ? "Enviando..." : "Enviar a refaccionaria"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL OMITIR REFACCIONES ===== */}
+      {showOmitirModal && (
+        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }} tabIndex="-1">
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title fw-bold">Continuar sin refacciones</h5>
+                <button type="button" className="btn-close" onClick={() => setShowOmitirModal(false)} disabled={guardandoOmitir} />
+              </div>
+
+              <div className="modal-body">
+                <div className="alert alert-info py-2 small">
+                  La orden <strong>no pasará por refaccionaria</strong>. Los servicios que captures aquí aparecerán como
+                  partidas del presupuesto para cotizarlos al cliente. Si más adelante necesitas piezas, podrás
+                  solicitarlas desde esta misma pestaña.
+                </div>
+
+                <table className="table table-sm table-bordered align-middle">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Servicio a realizar</th>
+                      <th style={{ width: "100px" }}>Cantidad</th>
+                      <th style={{ width: "50px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviciosOmitir.map((item, idx) => (
+                      <tr key={idx}>
+                        <td>
+                          <input
+                            className="form-control form-control-sm"
+                            value={item.concepto}
+                            onChange={(e) => cambiarServicioOmitir(idx, "concepto", e.target.value)}
+                            placeholder="Ej. Alineación y balanceo, Diagnóstico eléctrico..."
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min="1"
+                            className="form-control form-control-sm"
+                            value={item.cantidad}
+                            onChange={(e) => cambiarServicioOmitir(idx, "cantidad", e.target.value)}
+                          />
+                        </td>
+                        <td className="text-center">
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm"
+                            onClick={() => eliminarServicioOmitir(idx)}
+                            disabled={serviciosOmitir.length === 1}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <button type="button" className="btn btn-outline-secondary btn-sm" onClick={agregarServicioOmitir}>
+                  + Agregar servicio
+                </button>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowOmitirModal(false)} disabled={guardandoOmitir}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleOmitirRefacciones} disabled={guardandoOmitir}>
+                  {guardandoOmitir ? "Guardando..." : "Continuar a presupuesto"}
                 </button>
               </div>
             </div>

@@ -20,6 +20,9 @@ async function proteger(req, res, next) {
     if (!usuario) {
       return res.status(401).json({ message: 'Usuario no encontrado' });
     }
+    if (usuario.isActive === false) {
+      return res.status(401).json({ message: 'Esta cuenta fue desactivada.' });
+    }
 
     req.user = usuario; // aquí tienes .role, .email, etc.
     next();

@@ -1,421 +1,250 @@
 const puppeteer = require('puppeteer');
 const dayjs = require('dayjs');
-const path = require('path');
-const fs = require('fs');
 
+// Resuelve el nombre a mostrar del cliente a partir del snapshot plano que
+// vive en la propia orden (Particular: nombre+apellidos; Empresa/Gobierno:
+// nombreGobierno) — mismo criterio que usa VehiculosConsultaOrdenes.jsx.
+function nombreCliente(orden) {
+  if (orden.nombreGobierno) return orden.nombreGobierno;
+  const partes = [orden.nombreCliente, orden.apellidoPaterno, orden.apellidoMaterno].filter(Boolean);
+  return partes.length ? partes.join(' ') : 'CLIENTE GENERAL';
+}
 
-const assetPath = (...parts) =>
-  path.join(__dirname, '..', 'assets', 'pdf', ...parts);
-
-const imageBase64 = (filename) => {
-  const filePath = assetPath(filename);
-  if (!fs.existsSync(filePath)) return "";
-
-  const ext = path.extname(filename).replace(".", "").toLowerCase();
-  const mime = ext === "png" ? "image/png" : "image/jpeg";
-  const data = fs.readFileSync(filePath).toString("base64");
-
-  return `data:${mime};base64,${data}`;
-};
-
-const money = (value) =>
-  new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    minimumFractionDigits: 2,
-  }).format(Number(value) || 0);
-
-const escapeHtml = (value = '') =>
-  String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-
-const nombreCliente = (orden) => {
-  const c = orden.cliente || {};
-  if (c.gobierno?.nombreGobierno) return c.gobierno.nombreGobierno;
-  const nombre = [c.nombre, c.apellidoPaterno, c.apellidoMaterno].filter(Boolean).join(' ');
-  return nombre || 'N/A';
-};
-
-const telefono = (orden) => {
-  const c = orden.cliente || {};
-  const tel = (c.telefonos || [])[0] || {};
-  const cel = (c.celulares || [])[0] || {};
-  const fijo = [tel.lada, tel.numero].filter(Boolean).join('');
-  const celular = [cel.lada, cel.numero].filter(Boolean).join('');
-  return fijo || celular || 'N/A';
-};
-
-const correos = (orden) => {
-  const c = orden.cliente || {};
-  return (c.emails || []).filter(Boolean).join(', ');
-};
+function direccionCliente(orden) {
+  const partes = [
+    orden.direccion,
+    orden.numeroExt ? `#${orden.numeroExt}` : '',
+    orden.colonia,
+    orden.ciudad,
+    orden.estado,
+  ].filter(Boolean);
+  return partes.join(', ');
+}
 
 exports.generarVentaClientePDF = async (res, orden) => {
-  let browser;
-
   try {
-    browser = await puppeteer.launch({
+    const browser = await puppeteer.launch({
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
-
     const page = await browser.newPage();
 
-    const fechaActual = dayjs().format('DD/MM/YYYY');
-    const horaRecepcion = orden.horaRecepcion || '';
-    const fechaRecepcion = orden.fechaRecepcion
-      ? dayjs(orden.fechaRecepcion).format('DD/MM/YYYY')
-      : fechaActual;
+    const fecha = orden.fechaCierre ? dayjs(orden.fechaCierre) : dayjs();
+    const fmt = (n) => Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
-    const items = (orden.ventaCliente || []).map((item) => {
-      const cant = Number(item.cant || 0);
-      const precio = Number(item.precioVenta || 0);
-      const subtotal = cant * precio;
-      const iva = subtotal * 0.08;
+    const items = (orden.ventaCliente || []).map((r) => ({
+      cant: Number(r.cant || 0),
+      desc: r.concepto || '',
+      obs: r.observaciones || '',
+      precio: Number(r.precioVenta || 0),
+      importe: Number(r.cant || 0) * Number(r.precioVenta || 0),
+    }));
 
-      return {
-        cant,
-        desc: item.concepto || '',
-        precio,
-        iva,
-        total: subtotal + iva,
-      };
-    });
+    const subtotal = items.reduce((a, i) => a + i.importe, 0);
+    const ivaPct = Number(orden.ivaVenta ?? 8) || 0;
+    const ivaMonto = subtotal * (ivaPct / 100);
+    const total = subtotal + ivaMonto;
 
-    const subtotal = items.reduce(
-      (acc, item) => acc + Number(item.cant || 0) * Number(item.precio || 0),
-      0
-    );
-    const iva = subtotal * 0.08;
-    const totalFinal = subtotal + iva;
+    const MIN_ROWS = 12;
+    const maxRows = Math.max(MIN_ROWS, items.length);
 
-    const _dir = ((orden.cliente || {}).direccion) || {};
-    const direccion = [_dir.calle, _dir.numeroExterior, _dir.numeroInterior, _dir.colonia]
-      .filter(Boolean)
-      .join(' ');
+    const emptyRow = `<tr>
+      <td class="tc">&nbsp;</td><td></td><td></td>
+      <td class="tr" style="color:#bbb">$ -</td>
+      <td class="tr" style="color:#bbb">$ -</td>
+    </tr>`;
 
-    const logoSrc     = imageBase64('logo_servicompactos.png');
-    const engomadoSrc = imageBase64('engomado_ecologico.jpg');
-    const marcasSrc   = imageBase64('marcas_llantas.jpg');
+    const rows = Array.from({ length: maxRows }, (_, i) => {
+      const r = items[i];
+      if (!r) return emptyRow;
+      return `<tr>
+        <td class="tc">${r.cant}</td>
+        <td class="tl">${r.desc}</td>
+        <td class="tl">${r.obs}</td>
+        <td class="tr">$${fmt(r.precio)}</td>
+        <td class="tr">$${fmt(r.importe)}</td>
+      </tr>`;
+    }).join('');
 
-    const htmlContent = `
-<!doctype html>
+    const infoVehiculo = orden.sinVehiculo
+      ? ''
+      : `
+          <tr>
+            <td class="hdr-tag">MARCA</td>
+            <td class="hdr-val">${orden.marca || ''}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">PLACAS</td>
+            <td class="hdr-vval">${orden.placas || ''}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">LÍNEA / AÑO</td>
+            <td class="hdr-val">${[orden.modelo, orden.anio].filter(Boolean).join(' / ')}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">SERIE</td>
+            <td class="hdr-vval">${orden.serie || ''}</td>
+          </tr>`;
+
+    const htmlContent = `<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <style>
-    @page { size: Legal; margin: 10mm; }
-    body {
-      font-family: Helvetica, Arial, sans-serif;
-      font-size: 16px;
-      color: #000;
-      margin: 0;
-      padding: 0;
-    }
-    .top {
-      display: grid;
-      grid-template-columns: 78px 1fr 210px;
-      align-items: start;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
-    .qr {
-      width: 54px;
-      height: 54px;
-      border: 8px solid #111;
-      box-sizing: border-box;
-      margin-left: 8px;
-      margin-top: 2px;
-    }
-    .brand {
-      text-align: center;
-      color: #214190;
-      font-size: 30px;
-      font-weight: 700;
-      line-height: 1;
-      padding-top: 8px;
-    }
-    .brand span { color: #ef6b21; }
-    .advisor {
-      font-size: 16px;
-      font-weight: 700;
-      line-height: 1.5;
-      padding-top: 8px;
-    }
-    .title {
-      text-align: center;
-      font-size: 17px;
-      font-weight: 700;
-      margin: 6px 0 2px;
-    }
-    .address {
-      text-align: center;
-      font-size: 16px;
-      margin-bottom: 4px;
-    }
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 14px;
-      font-size: 16px;
-    }
-    .data-table td {
-      border: 1px solid #000;
-      padding: 2px 3px;
-      vertical-align: top;
-    }
-    .label { font-weight: 700; }
-    .os-label {
-      background: #214190;
-      color: #fff;
-      font-weight: 700;
-    }
-    .os-number {
-      color: red;
-      font-weight: 700;
-      text-align: center;
-    }
-    .items {
-      width: 92%;
-      margin: 0 auto 8px;
-      border-collapse: collapse;
-      font-size: 16px;
-    }
-    .items th {
-      border-bottom: 1px solid #000;
-      padding: 4px 3px;
-      text-align: center;
-      font-weight: 700;
-    }
-    .items td {
-      padding: 3px;
-      text-align: center;
-    }
-    .items .money {
-      text-align: right;
-      white-space: nowrap;
-    }
-    .obs {
-      width: 92%;
-      margin: 8px auto 0;
-      border-top: 1px solid #000;
-      padding-top: 4px;
-      font-size: 16px;
-      min-height: 18px;
-    }
-    .included {
-      width: 92%;
-      margin: 8px auto;
-      text-align: center;
-      font-size: 16px;
-      font-weight: 700;
-    }
-    .legal {
-      width: 92%;
-      margin: 0 auto;
-      font-size: 16px;
-      line-height: 1.7;
-      text-align: justify;
-    }
-    .green-banner {
-      width: 82%;
-      margin: 10px auto;
-      background: #8bd045;
-      color: #fff;
-      text-align: center;
-      font-size: 16px;
-      font-weight: 700;
-      padding: 8px 10px;
-      line-height: 1.5;
-    }
-    .tires-title {
-      text-align: center;
-      font-size: 16px;
-      font-weight: 700;
-      margin-top: 10px;
-    }
-    .tires-sub {
-      text-align: center;
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
-    .brand-grid {
-      width: 80%;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 7px;
-      align-items: center;
-      text-align: center;
-      font-size: 16px;
-      font-weight: 700;
-    }
-    .brand-grid div {
-      border: 1px solid #ddd;
-      padding: 3px;
-      min-height: 16px;
-    }
-    .logo {
-      max-width: 500px;
-      max-height: 70px;
-      object-fit: contain;
-    }
-  </style>
+<meta charset="UTF-8">
+<style>
+  @page { size: Legal portrait; margin: 10mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 9.5px; color: #000; }
+
+  .tc { text-align: center; }
+  .tl { text-align: left; }
+  .tr { text-align: right; }
+  .b  { font-weight: bold; }
+
+  .hdr-tbl { width: 100%; border-collapse: collapse; margin-bottom: 6px; border: 0.8px solid #000; }
+  .hdr-tbl td { border: 0.8px solid #000; padding: 0; vertical-align: top; }
+
+  .hdr-left { width: 28%; padding: 5px 7px; vertical-align: middle; }
+  .logo-box {
+    width: 24mm; height: 18mm; border: 1px solid #999; display: inline-block;
+    text-align: center; line-height: 18mm; font-size: 10px; color: #666;
+    vertical-align: middle; margin-bottom: 4px;
+  }
+  .biz-name { font-size: 11px; font-weight: bold; text-transform: uppercase; }
+  .biz-info { font-size: 8.5px; line-height: 1.5; }
+
+  .hdr-right { width: 72%; vertical-align: top; }
+  .hdr-inner { width: 100%; border-collapse: collapse; height: 100%; }
+  .hdr-inner td { border: 0.8px solid #000; padding: 3px 6px; vertical-align: middle; }
+
+  .hdr-title { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; padding: 6px !important; }
+
+  .hdr-client-lbl { background: #000; color: #fff; font-weight: bold; font-size: 10px; text-align: center; width: 22%; }
+  .hdr-client-val { font-weight: bold; font-size: 12px; text-align: center; }
+
+  .hdr-tag  { background: #e8e8e8; font-weight: bold; text-align: right; width: 15%; font-size: 9px; }
+  .hdr-val  { text-align: left; width: 30%; font-size: 9px; }
+  .hdr-gap  { width: 4%; }
+  .hdr-vtag { background: #e8e8e8; font-weight: bold; text-align: right; width: 14%; font-size: 9px; }
+  .hdr-vval { text-align: left; width: 15%; font-size: 9px; }
+
+  .items-tbl { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .items-tbl th, .items-tbl td { border: 0.8px solid #000; padding: 3px 5px; vertical-align: middle; }
+  .sec-hdr { background: #000; color: #fff; text-align: center; font-weight: bold; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .col-hdr { background: #e8e8e8; font-weight: bold; text-align: center; font-size: 8.5px; }
+
+  .grand-tbl { border-collapse: collapse; float: right; width: 72mm; margin-top: 6px; }
+  .grand-tbl td { border: 0.8px solid #000; padding: 3px 6px; font-size: 9.5px; }
+  .g-lbl { background: #e8e8e8; font-weight: bold; text-align: right; width: 60%; }
+  .g-val { text-align: right; }
+  .g-tot-lbl { background: #000; color: #fff; font-weight: bold; text-align: right; font-size: 11px; }
+  .g-tot-val { background: #000; color: #fff; font-weight: bold; text-align: right; font-size: 11px; }
+
+  .clearfix::after { content: ''; display: table; clear: both; }
+  .obs-box { margin-top: 8px; border: 0.8px solid #000; padding: 6px; font-size: 9px; min-height: 14mm; }
+  .obs-box .obs-lbl { font-weight: bold; text-transform: uppercase; font-size: 8px; margin-bottom: 3px; display: block; }
+  .footer { margin-top: 10px; font-size: 8px; color: #333; line-height: 1.6; clear: both; }
+  .guarantee { text-align: center; font-weight: bold; font-size: 9px; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
+</style>
 </head>
 <body>
-  <div class="top">
-    <div class="qr"></div>
-    <div class="brand">
-      ${logoSrc ? `<img src="${logoSrc}" class="logo" />` : `Servi<span>compactos</span>`}
-    </div>
-    <div class="advisor">
-      ASESOR: ${escapeHtml(orden.asesor || 'admin')}<br>
-      Tel: ${escapeHtml(orden.telefonoAsesor || '')}<br>
-      Correo: ${escapeHtml(orden.correoAsesor || '')}<br>
-      Fecha Cotización: ${fechaActual}
-    </div>
-  </div>
 
-  <div class="title">PRESUPUESTO</div>
-  <div class="address">
-    Paseo Triunfo de la República No. 322-B, Cd. Juárez Chihuahua, Col. San Lorenzo, CP. 32320
-    Tels: (656) 6 23 56 51 al 54
-  </div>
+<table class="hdr-tbl">
+  <tbody>
+    <tr>
+      <td class="hdr-left" rowspan="2">
+        <div class="logo-box">LOGO</div>
+        <div class="biz-name">Autoservicio D y G</div>
+        <div class="biz-info">
+          Servicios Profesionales de Inyección<br>
+          Av. Valentín Fuentes Varela #1779<br>
+          Col. La Fuente, Juárez, Chih.<br>
+          Tel. (656) *********
+        </div>
+      </td>
 
-  <table class="data-table">
-    <tr>
-      <td class="label" style="width: 20%;">NOMBRE DEL CLIENTE:</td>
-      <td colspan="3">${escapeHtml(nombreCliente(orden))}</td>
-      <td class="os-label" style="width: 18%;">ORDEN DE SERVICIO:</td>
-      <td class="os-number" style="width: 14%;">${escapeHtml(orden.ordenServicio || '')}</td>
+      <td class="hdr-right">
+        <table class="hdr-inner">
+          <tr>
+            <td class="hdr-title" colspan="5">Venta al Cliente</td>
+          </tr>
+          <tr>
+            <td class="hdr-client-lbl" colspan="2">NOMBRE DEL CLIENTE</td>
+            <td class="hdr-client-val" colspan="3">${nombreCliente(orden)}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">ORDEN DE SERVICIO</td>
+            <td class="hdr-val b">${orden.ordenServicio || ''}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">FECHA</td>
+            <td class="hdr-vval">${fecha.format('DD/MM/YYYY')}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">RFC</td>
+            <td class="hdr-val">${orden.rfc || 'N/A'}</td>
+            <td class="hdr-gap"></td>
+            <td class="hdr-vtag">TELÉFONO</td>
+            <td class="hdr-vval">${orden.celular || orden.telefonoFijo || 'N/A'}</td>
+          </tr>
+          <tr>
+            <td class="hdr-tag">DIRECCIÓN</td>
+            <td class="hdr-val" colspan="4">${direccionCliente(orden) || 'N/A'}</td>
+          </tr>
+          ${infoVehiculo}
+        </table>
+      </td>
     </tr>
+  </tbody>
+</table>
+
+<table class="items-tbl">
+  <thead>
+    <tr><th class="sec-hdr" colspan="5">Conceptos</th></tr>
     <tr>
-      <td class="label">FECHA DE RECEPCION:</td>
-      <td colspan="2">${fechaRecepcion}${horaRecepcion ? ` A LAS ${escapeHtml(horaRecepcion)}` : ''}</td>
-      <td class="label">CORREO</td>
-      <td colspan="2">${escapeHtml(correos(orden))}</td>
+      <th class="col-hdr" style="width:7%">Cant.</th>
+      <th class="col-hdr">Concepto</th>
+      <th class="col-hdr" style="width:22%">Observaciones</th>
+      <th class="col-hdr" style="width:15%">Precio</th>
+      <th class="col-hdr" style="width:15%">Importe</th>
     </tr>
-    <tr>
-      <td class="label">RFC:</td>
-      <td>${escapeHtml((orden.cliente || {}).rfc || '')}</td>
-      <td class="label">TELEFONO</td>
-      <td>${escapeHtml(telefono(orden))}</td>
-      <td class="label">CELULAR</td>
-      <td>${escapeHtml(((orden.cliente || {}).celulares || [])[0]?.numero || '')}</td>
-    </tr>
-    <tr>
-      <td class="label">DIRECCION:</td>
-      <td colspan="5">${escapeHtml(direccion)}</td>
-    </tr>
-    <tr>
-      <td align="center"><b>MARCA</b><br>${escapeHtml(orden.marca || '')}</td>
-      <td align="center"><b>MODELO</b><br>${escapeHtml(orden.modelo || '')}</td>
-      <td align="center"><b>AÑO</b><br>${escapeHtml(orden.anio || '')}</td>
-      <td align="center"><b>COLOR</b><br>${escapeHtml(orden.color || '')}</td>
-      <td align="center"><b>NACIONALIDAD</b><br>${escapeHtml(orden.nacionalidad || '')}</td>
-      <td align="center"><b>SERIE</b><br>${escapeHtml(orden.serie || '')}</td>
-    </tr>
-    <tr>
-      <td align="center"><b>PLACAS</b><br>${escapeHtml(orden.placas || '')}</td>
-      <td align="center"><b>MOTOR</b><br>${escapeHtml(orden.motor || '')}</td>
-      <td align="center"><b>KMS/MILLAS</b><br>${escapeHtml(orden.kmsMillas || '')}</td>
-      <td align="center"><b>DIRIGIDO A:</b><br>${escapeHtml(orden.dirigidoA || '')}</td>
-      <td align="center"><b>NUMERO ECONOMICO:</b><br>${escapeHtml(orden.numeroEconomico || '')}</td>
-      <td></td>
-    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>
+
+<div class="clearfix">
+  <table class="grand-tbl">
+    <tr><td class="g-lbl">SUBTOTAL</td>          <td class="g-val">$${fmt(subtotal)}</td></tr>
+    <tr><td class="g-lbl">I.V.A. (${ivaPct}%)</td><td class="g-val">$${fmt(ivaMonto)}</td></tr>
+    <tr><td class="g-tot-lbl">TOTAL</td>          <td class="g-tot-val">$${fmt(total)}</td></tr>
   </table>
+</div>
 
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width: 15%;">Cantidad</th>
-        <th style="width: 51%;">Descripción del Servicio y/o Reparación</th>
-        <th style="width: 12%;">Precio</th>
-        <th style="width: 10%;">IVA</th>
-        <th style="width: 12%;">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${
-        items.length
-          ? items.map(item => `
-        <tr>
-          <td>${item.cant}</td>
-          <td>${escapeHtml(item.desc)}</td>
-          <td class="money">${money(item.precio)}</td>
-          <td class="money">${money(item.iva)}</td>
-          <td class="money">${money(item.total)}</td>
-        </tr>`).join('')
-          : `<tr><td colspan="5">Sin partidas de venta al cliente.</td></tr>`
-      }
-      <tr>
-        <td></td>
-        <td></td>
-        <td colspan="2" style="text-align:right;"><b>Importe Total:</b></td>
-        <td class="money"><b>${money(totalFinal)}</b></td>
-      </tr>
-    </tbody>
-  </table>
+<div class="obs-box clearfix">
+  <span class="obs-lbl">Observaciones</span>
+  ${orden.observacionesExternas || orden.observCotizacion || '&nbsp;'}
+</div>
 
-  <div class="obs">
-    <b>Observaciones:</b> ${escapeHtml(orden.observCotizacion || orden.observacionesExternas || '')}
-  </div>
+<div class="footer">
+  <p>Este documento ampara los conceptos y precios acordados con el cliente para la presente orden de servicio.</p>
+</div>
+<div class="guarantee">Garantía de 90 días en refacciones y mano de obra</div>
 
-  <div class="included">
-    TODOS NUESTROS SERVICIOS INCLUYEN MANO DE OBRA Y REFACCIONES
-  </div>
-
-  <div class="legal">
-    <p><b>Importante:</b> La presente cotización tiene una vigencia de 15 días a partir esta fecha y esta sujeta a cambios sin previo aviso, así mismo a la variación del dólar.</p>
-    <p><b>Garantía:</b> Nuestras reparaciones estan garantizadas por noventa (90) días en condiciones de uso normal y que no hayan sido intervenidas por terceros. No hay garantia en partes eléctricas y/o usadas, ni en bombas de gasolina.</p>
-  </div>
-
-  ${
-    engomadoSrc
-      ? `<div style="text-align:center;"><img src="${engomadoSrc}" /></div>`
-      : `<div class="green-banner">
-          "Solicite su engomado ecológico y juntos cuidemos el medio ambiente"<br>
-          (Precio 3 UMA's IVA incluido)
-        </div>`
-  }
-
-  <div class="tires-title">CENTRO LLANTERO MULTIMARCAS</div>
-  <div class="tires-sub">
-    Venta e instalación de llantas nuevas en las marcas de mayor prestigio al mejor precio !
-  </div>
-
-  ${
-    marcasSrc
-      ? `<div><img src="${marcasSrc}" /></div>`
-      : `<div class="brand-grid">
-          <div>MICHELIN</div><div>GOODYEAR</div><div>Continental</div><div>NEXEN</div>
-          <div>BFGoodrich</div><div>DUNLOP</div><div>Euzkadi</div><div>NITTO</div>
-          <div>PIRELLI</div><div>HANKOOK</div><div>BRIDGESTONE</div><div>Y muchas más!!!</div>
-        </div>`
-  }
 </body>
 </html>`;
 
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-
     const pdfBuffer = await page.pdf({
       format: 'Legal',
       printBackground: true,
-      margin: { top: '8mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
     });
 
-    res.contentType('application/pdf');
+    await browser.close();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="venta_cliente_${orden.ordenServicio || orden._id}.pdf"`
+    );
     res.send(pdfBuffer);
   } catch (error) {
-    console.error('Error generando PDF de venta al cliente:', error);
-    res.status(500).send('Error al generar el PDF de venta al cliente');
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
+    console.error('Error al generar PDF de venta al cliente:', error.message, error.stack);
+    res.status(500).send('Error al generar PDF: ' + error.message);
   }
 };

@@ -7,6 +7,10 @@ const axios = require("axios");
 const { Xslt, XmlParser } = require("xslt-processor");
 
 const FiscalConfig = require("../models/FiscalConfig");
+const FacturaCfdi = require("../models/FacturaCfdi");
+const Vehiculo = require("../models/Vehiculo");
+const { sincronizarFechaPagadaRemisiones } = require("../utils/cajaTotales");
+const { proteger } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -288,6 +292,85 @@ function buildCfdiXmlUnsigned({ emisor, receptor, cfdi, conceptos, totales }) {
 }
 
 /* =========================
+   XML BUILDER PAGO (TIPO P, SIN SELLO)
+   Complemento de pago 2.0 (pago20)
+========================= */
+function buildPagoXmlUnsigned({ emisor, receptor, cfdi, pago, relacionadas }) {
+  const { serie, folio, lugarExpedicion, fecha } = cfdi;
+
+  const fechaOk = fecha || cfdiFechaNow();
+  const serieAttr = serie ? ` Serie="${escapeXml(String(serie))}"` : "";
+  const folioAttr = folio ? ` Folio="${escapeXml(String(folio))}"` : "";
+  const noCertAttr = emisor.noCertificado ? ` NoCertificado="${escapeXml(emisor.noCertificado)}"` : "";
+  const certAttr = emisor.certificadoBase64 ? ` Certificado="${escapeXml(emisor.certificadoBase64)}"` : "";
+
+  const monto = relacionadas.reduce((s, r) => s + Number(r.importePagado || 0), 0);
+
+  // Si solo llega la fecha (YYYY-MM-DD) se completa con hora fija
+  const fpRaw = String(pago.fechaPago || "");
+  const fechaPago = fpRaw.length === 10 ? `${fpRaw}T12:00:00` : fpRaw;
+
+  const doctosXml = relacionadas
+    .map((r) => {
+      const saldoAnt = Number(r.saldoAnterior ?? r.total ?? 0);
+      const pagado = Number(r.importePagado || 0);
+      const insoluto = Number(r.saldoInsoluto ?? Math.max(saldoAnt - pagado, 0));
+      const idDoc = r.uuid || `${r.serie || ""}${r.folio || ""}`;
+
+      const serieDrAttr = r.serie ? ` Serie="${escapeXml(r.serie)}"` : "";
+      const folioDrAttr = r.folio ? ` Folio="${escapeXml(r.folio)}"` : "";
+
+      return `
+      <pago20:DoctoRelacionado IdDocumento="${escapeXml(idDoc)}"${serieDrAttr}${folioDrAttr} MonedaDR="MXN" EquivalenciaDR="1" NumParcialidad="${escapeXml(String(r.numParcialidad || 1))}" ImpSaldoAnt="${fmt2(saldoAnt)}" ImpPagado="${fmt2(pagado)}" ImpSaldoInsoluto="${fmt2(insoluto)}" ObjetoImpDR="01"/>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante
+  xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:pago20="http://www.sat.gob.mx/Pagos20"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd http://www.sat.gob.mx/Pagos20 http://www.sat.gob.mx/sitio_internet/cfd/Pagos/Pagos20.xsd"
+  Version="4.0"${serieAttr}${folioAttr}${noCertAttr}${certAttr}
+  Fecha="${fechaOk}"
+  SubTotal="0"
+  Moneda="XXX"
+  Total="0"
+  TipoDeComprobante="P"
+  Exportacion="01"
+  LugarExpedicion="${escapeXml(lugarExpedicion)}"
+  Sello="">
+
+  <cfdi:Emisor
+    Rfc="${escapeXml(emisor.rfc)}"
+    Nombre="${escapeXml(emisor.nombre)}"
+    RegimenFiscal="${escapeXml(emisor.regimenFiscal)}"
+  />
+
+  <cfdi:Receptor
+    Rfc="${escapeXml(receptor.rfc)}"
+    Nombre="${escapeXml(receptor.nombre)}"
+    DomicilioFiscalReceptor="${escapeXml(receptor.cp)}"
+    RegimenFiscalReceptor="${escapeXml(receptor.regimenFiscal)}"
+    UsoCFDI="CP01"
+  />
+
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111506" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago" ValorUnitario="0" Importe="0" ObjetoImp="01"/>
+  </cfdi:Conceptos>
+
+  <cfdi:Complemento>
+    <pago20:Pagos Version="2.0">
+      <pago20:Totales MontoTotalPagos="${fmt2(monto)}"/>
+      <pago20:Pago FechaPago="${escapeXml(fechaPago)}" FormaDePagoP="${escapeXml(pago.formaPago || "03")}" MonedaP="MXN" TipoCambioP="1" Monto="${fmt2(monto)}">${doctosXml}
+      </pago20:Pago>
+    </pago20:Pagos>
+  </cfdi:Complemento>
+
+</cfdi:Comprobante>`;
+}
+
+/* =========================
    CADENA ORIGINAL (XSLT SAT)
    (cache simple en memoria)
 ========================= */
@@ -336,16 +419,118 @@ function injectSello(xmlUnsigned, selloB64) {
   return xmlUnsigned.replace(/Sello=""/, `Sello="${selloB64}"`);
 }
 
+// Al generar una factura de ingreso, cualquier anticipo o remisión vigente de
+// las órdenes facturadas deja de tener sentido como comprobante de cobro
+// aparte: se cancela automáticamente y se enlaza a la factura recién creada
+// (pago.facturaId), en vez de dejar que un admin lo cancele a mano sin dejar
+// registrado a qué factura pasó (eso queda solo para corregir errores de
+// captura, ver POST /api/cajas/:id/pagos/:pagoId/cancelar). A diferencia de
+// edigitaltaller, aquí no se revierte ningún movimiento de terminal: Taller
+// calcula los totales de terminal en vivo a partir de los pagos no cancelados
+// (ver backend/utils/totalIngresosDia.js), así que marcar el pago como
+// cancelado ya es suficiente para que deje de contar.
+async function cancelarAnticiposYRemisionesPorFactura(ordenes, facturaDoc) {
+  const folioFactura = `${facturaDoc.serie || ""}${facturaDoc.folio || ""}`;
+
+  for (const o of ordenes) {
+    if (!o?._id) continue;
+    const vehiculo = await Vehiculo.findById(o._id);
+    if (!vehiculo) continue;
+
+    const pagosPorCancelar = (vehiculo.pagos || []).filter(
+      (p) =>
+        !p.cancelado &&
+        ((p.comprobante === "NOTA_VENTA" && p.tipoPago === "ANTICIPO") || p.comprobante === "REMISION")
+    );
+    if (!pagosPorCancelar.length) continue;
+
+    for (const pago of pagosPorCancelar) {
+      const esRemision = pago.comprobante === "REMISION";
+      const motivo = `Se cancela ${esRemision ? "remisión" : "anticipo"} y pasa a factura ${folioFactura}`;
+
+      pago.cancelado = true;
+      pago.canceladoEn = new Date();
+      pago.canceladoPor = "Sistema (factura)";
+      pago.motivoCancelacion = motivo;
+      // A diferencia de la cancelación manual por error (cajas.js), aquí NO
+      // se pisa pago.notas: conserva la referencia original del cobro (banco,
+      // fecha, quién lo recibió).
+      pago.facturaId = facturaDoc._id;
+      if (esRemision) pago.remision.tipo = "Cancelada";
+    }
+
+    await vehiculo.save();
+    // Al dejar de contar como abonado puede reaparecer saldo: las remisiones
+    // vigentes de la orden vuelven a quedar sin Fecha de Pagada.
+    await sincronizarFechaPagadaRemisiones(vehiculo);
+  }
+}
+
 /* =========================
    ENDPOINT
    POST /api/generar-xml/xml
 ========================= */
-router.post("/xml", async (req, res) => {
+router.post("/xml", proteger, async (req, res) => {
   try {
-    const { cliente, conceptos, cfdi } = req.body;
+    const {
+      cliente,
+      conceptos,
+      cfdi,
+      orden,
+      ordenes: ordenesBody,
+      tipoFactura = "factura",
+      relacionadas = [],
+      pago = null,
+    } = req.body;
 
-    if (!cliente || !Array.isArray(conceptos) || conceptos.length === 0 || !cfdi) {
+    const esNotaCredito = tipoFactura === "notaCredito";
+    const esComplementoPago = tipoFactura === "complementoPago";
+
+    // Una factura puede agrupar varias órdenes de servicio del mismo cliente.
+    // `orden` (singular) se sigue aceptando por compatibilidad con cualquier
+    // caller viejo y es siempre la primera de la lista.
+    const ordenes = Array.isArray(ordenesBody) && ordenesBody.length
+      ? ordenesBody
+      : orden
+      ? [orden]
+      : [];
+    const ordenPrincipal = ordenes[0] || null;
+
+    if (!cliente || !cfdi) {
       return res.status(400).json({ ok: false, error: "Faltan datos para generar XML." });
+    }
+
+    if (!esComplementoPago && (!Array.isArray(conceptos) || conceptos.length === 0)) {
+      return res.status(400).json({ ok: false, error: "Faltan conceptos para generar XML." });
+    }
+
+    // La orden de servicio solo aplica para la factura de ingreso
+    if (
+      tipoFactura === "factura" &&
+      (!ordenes.length || ordenes.some((o) => !o?._id || !o?.ordenServicio))
+    ) {
+      return res.status(400).json({ ok: false, error: "Falta la orden de servicio." });
+    }
+
+    if ((esNotaCredito || esComplementoPago) && (!Array.isArray(relacionadas) || relacionadas.length === 0)) {
+      return res.status(400).json({
+        ok: false,
+        error: esNotaCredito
+          ? "La nota de crédito requiere la factura relacionada."
+          : "El complemento de pago requiere al menos una factura.",
+      });
+    }
+
+    if (esComplementoPago) {
+      if (!pago || !pago.fechaPago) {
+        return res.status(400).json({ ok: false, error: "Falta la fecha de pago del complemento." });
+      }
+      if (relacionadas.some((r) => Number(r.importePagado || 0) <= 0)) {
+        return res.status(400).json({
+          ok: false,
+          error: "Cada factura del complemento requiere un importe pagado mayor a 0.",
+        });
+      }
     }
 
     // valida cliente mínimo
@@ -356,19 +541,21 @@ router.post("/xml", async (req, res) => {
       });
     }
 
-    // valida conceptos mínimo
-    for (const c of conceptos) {
-      if (!c.cProdServ || !c.cUnidad || !c.unidad || !c.descripcion) {
-        return res.status(400).json({
-          ok: false,
-          error: "Cada concepto requiere: cProdServ, cUnidad, unidad, descripcion.",
-        });
-      }
-      if (Number(c.cantidad || 0) <= 0 || Number(c.valorUnitario || 0) < 0) {
-        return res.status(400).json({
-          ok: false,
-          error: "Cada concepto requiere cantidad > 0 y valorUnitario >= 0.",
-        });
+    // valida conceptos mínimo (no aplica al complemento de pago: usa concepto fijo)
+    if (!esComplementoPago) {
+      for (const c of conceptos) {
+        if (!c.cProdServ || !c.cUnidad || !c.unidad || !c.descripcion) {
+          return res.status(400).json({
+            ok: false,
+            error: "Cada concepto requiere: cProdServ, cUnidad, unidad, descripcion.",
+          });
+        }
+        if (Number(c.cantidad || 0) <= 0 || Number(c.valorUnitario || 0) < 0) {
+          return res.status(400).json({
+            ok: false,
+            error: "Cada concepto requiere cantidad > 0 y valorUnitario >= 0.",
+          });
+        }
       }
     }
 
@@ -422,22 +609,34 @@ router.post("/xml", async (req, res) => {
       regimenFiscal: cliente.regimenFiscal,
     };
 
+    // Folio: se asigna automáticamente a partir del folio interno de la configuración fiscal
+    const folioActualNum = parseInt(cfg.folioInterno, 10) || 0;
+    const folioAsignado = folioActualNum + 1;
+
     // Defaults
     const cfdiFinal = {
       ...cfdi,
       lugarExpedicion: cfdi.lugarExpedicion || cfg.lugarExpedicion,
       serie: cfdi.serie ?? cfg.serie ?? "",
-      folio: cfdi.folio ?? "",
+      folio: String(folioAsignado),
 
       moneda: cfdi.moneda || "MXN",
       ivaRate: cfdi.ivaRate ?? 0.16,
 
       formaPago: cfdi.formaPago || "99",
       metodoPago: cfdi.metodoPago || "PUE",
-      usoCfdi: cfdi.usoCfdi || "G03",
+      usoCfdi: esComplementoPago ? "CP01" : cfdi.usoCfdi || "G03",
 
-      tipoComprobante: cfdi.tipoComprobante || "I",
+      tipoComprobante: esComplementoPago ? "P" : esNotaCredito ? "E" : cfdi.tipoComprobante || "I",
       exportacion: cfdi.exportacion || "01",
+
+      // Nota de crédito: CFDI relacionado con TipoRelacion 01 (nota de crédito de los documentos relacionados)
+      relacion: esNotaCredito
+        ? {
+            tipoRelacion: "01",
+            uuids: relacionadas.map((r) => r.uuid || `${r.serie || ""}${r.folio || ""}`),
+          }
+        : cfdi.relacion || null,
 
       aplicarRetencionIsr: !!cfdi.aplicarRetencionIsr,
       isrRate: Number(cfdi.isrRate ?? 0.0125),
@@ -450,20 +649,37 @@ router.post("/xml", async (req, res) => {
       });
     }
 
-    const totales = calcularTotales({
-      conceptos,
-      ivaRate: Number(cfdiFinal.ivaRate ?? 0.16),
-      aplicarRetencionIsr: !!cfdiFinal.aplicarRetencionIsr,
-      isrRate: Number(cfdiFinal.isrRate ?? 0.0125),
-    });
+    let totales;
+    let xmlUnsigned;
 
-    const xmlUnsigned = buildCfdiXmlUnsigned({
-      emisor,
-      receptor,
-      cfdi: cfdiFinal,
-      conceptos,
-      totales,
-    });
+    if (esComplementoPago) {
+      const montoPago = relacionadas.reduce((s, r) => s + Number(r.importePagado || 0), 0);
+      // En el CFDI tipo P el SubTotal/Total van en 0; el monto vive en el complemento.
+      totales = { subtotal: "0.00", iva: "0.00", isr: "0.00", total: fmt2(montoPago) };
+
+      xmlUnsigned = buildPagoXmlUnsigned({
+        emisor,
+        receptor,
+        cfdi: cfdiFinal,
+        pago,
+        relacionadas,
+      });
+    } else {
+      totales = calcularTotales({
+        conceptos,
+        ivaRate: Number(cfdiFinal.ivaRate ?? 0.16),
+        aplicarRetencionIsr: !!cfdiFinal.aplicarRetencionIsr,
+        isrRate: Number(cfdiFinal.isrRate ?? 0.0125),
+      });
+
+      xmlUnsigned = buildCfdiXmlUnsigned({
+        emisor,
+        receptor,
+        cfdi: cfdiFinal,
+        conceptos,
+        totales,
+      });
+    }
 
     const cadenaOriginal = await generarCadenaOriginal(xmlUnsigned);
 
@@ -471,15 +687,114 @@ router.post("/xml", async (req, res) => {
     const sello = firmarCadenaOriginal(cadenaOriginal, privateKeyPem);
     const xmlSigned = injectSello(xmlUnsigned, sello);
 
-    return res.json({
-      ok: true,
-      data: {
-        pemPathUsed: pemPath, // 👈 para debug
+    // A partir de aquí el XML ya está firmado: si falla el guardado en el
+    // historial, no debe perderse el XML que el usuario ya tiene derecho a descargar.
+    let facturaId = null;
+    let persistWarning = "";
+    try {
+      await FiscalConfig.findByIdAndUpdate(cfg._id, { folioInterno: String(folioAsignado) });
+
+      const facturaDoc = await FacturaCfdi.create({
+        tipoFactura,
+        tipoComprobante: cfdiFinal.tipoComprobante,
+        serie: cfdiFinal.serie,
+        folio: cfdiFinal.folio,
+        fecha: new Date(),
+        relacionadas,
+        pago: esComplementoPago
+          ? {
+              fechaPago: new Date(pago.fechaPago),
+              formaPago: pago.formaPago || "",
+              monto: Number(totales.total),
+            }
+          : undefined,
+        cliente: {
+          clienteId: cliente._id || null,
+          nombre: receptor.nombre,
+          rfc: receptor.rfc,
+          regimenFiscal: receptor.regimenFiscal,
+          codigoPostalFiscal: receptor.cp,
+          direccion: {
+            calle: cliente.direccion?.calle || "",
+            numeroExterior: cliente.direccion?.numeroExterior || "",
+            numeroInterior: cliente.direccion?.numeroInterior || "",
+            colonia: cliente.direccion?.colonia || "",
+            codigoPostal: cliente.direccion?.codigoPostal || "",
+            ciudad: cliente.direccion?.ciudad || "",
+            estado: cliente.direccion?.estado || "",
+          },
+          pais: cliente.pais || "",
+        },
+        orden: {
+          vehiculoId: ordenPrincipal?._id || null,
+          ordenServicio: ordenPrincipal?.ordenServicio || "",
+        },
+        ordenes: ordenes.map((o) => ({
+          vehiculoId: o?._id || null,
+          ordenServicio: o?.ordenServicio || "",
+        })),
+        conceptos: esComplementoPago ? [] : conceptos,
+        cfdi: {
+          usoCfdi: cfdiFinal.usoCfdi,
+          moneda: cfdiFinal.moneda,
+          tipoCambio: cfdiFinal.tipoCambio,
+          ivaRate: cfdiFinal.ivaRate,
+          metodoPago: cfdiFinal.metodoPago,
+          formaPago: cfdiFinal.formaPago,
+          lugarExpedicion: cfdiFinal.lugarExpedicion,
+          oc: cfdiFinal.oc,
+          comentarios: cfdiFinal.comentarios,
+          aplicarRetencionIsr: cfdiFinal.aplicarRetencionIsr,
+          isrRate: cfdiFinal.isrRate,
+        },
         emisor: {
           rfc: cfg.rfc,
           nombre: cfg.nombre,
           regimenFiscal: cfg.regimenFiscal,
           lugarExpedicion: cfg.lugarExpedicion,
+          telefono: cfg.telefono || "",
+          noCertificado: cfg.noCertificado,
+        },
+        totales: {
+          subtotal: Number(totales.subtotal),
+          iva: Number(totales.iva),
+          isr: Number(totales.isr),
+          total: Number(totales.total),
+        },
+        xml: xmlSigned,
+        cadenaOriginal,
+        sello,
+        estatus: "generada",
+        generadoPor: req.user?.name || req.user?.email || "",
+      });
+
+      facturaId = facturaDoc._id;
+
+      if (tipoFactura === "factura" && ordenes.length) {
+        await cancelarAnticiposYRemisionesPorFactura(ordenes, facturaDoc);
+      }
+    } catch (persistErr) {
+      console.error("No se pudo guardar FacturaCfdi:", persistErr);
+      persistWarning =
+        "El XML se generó, pero no se pudo guardar en el historial: " + persistErr.message;
+    }
+
+    return res.json({
+      ok: true,
+      data: {
+        pemPathUsed: pemPath, // 👈 para debug
+        facturaId,
+        persistWarning,
+        cfdi: {
+          folio: cfdiFinal.folio,
+          serie: cfdiFinal.serie,
+        },
+        emisor: {
+          rfc: cfg.rfc,
+          nombre: cfg.nombre,
+          regimenFiscal: cfg.regimenFiscal,
+          lugarExpedicion: cfg.lugarExpedicion,
+          telefono: cfg.telefono || "",
           noCertificado: cfg.noCertificado,
         },
         receptor: {

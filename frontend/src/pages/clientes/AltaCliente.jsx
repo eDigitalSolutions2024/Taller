@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { createCustomer, getCustomer, updateCustomer } from "../../api/customers";
-import { listarEmpleados } from "../../api/empleados";
 import "../../styles/clientes.css";
 
 const CLIENT_TYPES = [
@@ -11,6 +10,67 @@ const CLIENT_TYPES = [
   "Empresa Arrendadora",
   "Empresa Gobierno",
 ];
+
+function TelefonoList({ label, valores, onChange }) {
+  const lista = valores?.length ? valores : [{ lada: "", numero: "" }];
+  const handleChange = (i, field, value) => {
+    const arr = [...lista];
+    arr[i] = { ...arr[i], [field]: value };
+    onChange(arr);
+  };
+  const handleAdd = () => onChange([...lista, { lada: "", numero: "" }]);
+  const handleRemove = (i) => onChange(lista.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="form-row col-12">
+      <label>{label}</label>
+      {lista.map((tel, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+          <input placeholder="LADA" value={tel.lada ?? ""} onChange={(e) => handleChange(i, "lada", e.target.value)} style={{ width: 80 }} />
+          <input placeholder="Número" value={tel.numero ?? ""} onChange={(e) => handleChange(i, "numero", e.target.value)} style={{ flex: 1 }} />
+          {i === 0 ? (
+            <span style={{ fontSize: 12, color: "#0d6efd", whiteSpace: "nowrap" }}>Principal</span>
+          ) : (
+            <button type="button" onClick={() => handleRemove(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "red" }}>✕</button>
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={handleAdd} style={{ fontSize: 13, background: "none", border: "1px dashed #aaa", borderRadius: 6, padding: "4px 10px", cursor: "pointer", marginTop: 2 }}>
+        + Agregar {label.toLowerCase()}
+      </button>
+    </div>
+  );
+}
+
+function EmailList({ valores, onChange }) {
+  const lista = valores?.length ? valores : [""];
+  const handleChange = (i, value) => {
+    const arr = [...lista];
+    arr[i] = value;
+    onChange(arr);
+  };
+  const handleAdd = () => onChange([...lista, ""]);
+  const handleRemove = (i) => onChange(lista.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="form-row col-12">
+      <label>Correo Electrónico</label>
+      {lista.map((mail, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+          <input type="email" value={mail ?? ""} onChange={(e) => handleChange(i, e.target.value)} style={{ flex: 1 }} />
+          {i === 0 ? (
+            <span style={{ fontSize: 12, color: "#0d6efd", whiteSpace: "nowrap" }}>Principal</span>
+          ) : (
+            <button type="button" onClick={() => handleRemove(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "red" }}>✕</button>
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={handleAdd} style={{ fontSize: 13, background: "none", border: "1px dashed #aaa", borderRadius: 6, padding: "4px 10px", cursor: "pointer", marginTop: 2 }}>
+        + Agregar correo
+      </button>
+    </div>
+  );
+}
 
 // deep clone simple
 const deepClone = (o) => JSON.parse(JSON.stringify(o));
@@ -45,6 +105,11 @@ const initial = {
   email: "",
   telefono: { lada: "", numero: "", extension: "" },
   celular: { lada: "", numero: "" },
+  emails: [""],
+  telefonos: [{ lada: "", numero: "" }],
+  celulares: [{ lada: "", numero: "" }],
+  pais: "México",
+  requiereFacturacion: false,
   rfc: "",
   regimenFiscal: "",
   codigoPostalFiscal: "",
@@ -68,8 +133,6 @@ const initial = {
       estado: "",
     },
   },
-  asesorResponsable: "",
-  condicionesPago: "",
   observaciones: "",
 
   // EMPRESA (Privada/Arrendadora)
@@ -109,8 +172,11 @@ const initial = {
   },
 };
 
-export default function AltaCliente() {
-  const { id } = useParams();
+export default function AltaCliente({ modoModal = false, nombreInicial = "", onClienteCreado }) {
+  const params = useParams();
+  // En modo modal (alta rápida desde Nueva Orden) nunca se edita un cliente
+  // existente, aunque la URL de fondo traiga un :id.
+  const id = modoModal ? undefined : params.id;
   const isEdit = Boolean(id);
   const navigate = useNavigate();
 
@@ -118,9 +184,6 @@ export default function AltaCliente() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [loadingData, setLoadingData] = useState(false);
-
-  // 👉 lista de empleados para el combo de Asesor Responsable
-  const [empleados, setEmpleados] = useState([]);
 
   const upd = (path, v) => setForm((prev) => setIn(prev, path, v));
 
@@ -147,6 +210,13 @@ export default function AltaCliente() {
     setForm((prev) => normalizeForType(prev, tipo));
   };
 
+  // En modo modal, precargar el nombre que el usuario ya estaba buscando
+  useEffect(() => {
+    if (modoModal && nombreInicial) {
+      setForm((prev) => ({ ...prev, nombre: nombreInicial }));
+    }
+  }, [modoModal, nombreInicial]);
+
   // Cargar datos cuando es edición
   useEffect(() => {
     if (!isEdit) return;
@@ -164,8 +234,15 @@ export default function AltaCliente() {
         const merged = {
           ...initial,
           ...c,
-          telefono: { ...initial.telefono, ...((c.telefonos || [])[0] || c.telefono || {}) },
-          celular:  { ...initial.celular,  ...((c.celulares || [])[0] || c.celular  || {}) },
+          telefono: { ...initial.telefono, ...(c.telefono || {}) },
+          celular: { ...initial.celular, ...(c.celular || {}) },
+          // Migra campos singulares viejos a lista si el cliente aún no tiene
+          // arrays capturados (no se pierde el dato al editar un registro previo).
+          emails: c.emails?.length ? c.emails : (c.email ? [c.email] : [""]),
+          telefonos: c.telefonos?.length ? c.telefonos : (c.telefono?.numero ? [c.telefono] : [{ lada: "", numero: "" }]),
+          celulares: c.celulares?.length ? c.celulares : (c.celular?.numero ? [c.celular] : [{ lada: "", numero: "" }]),
+          requiereFacturacion: c.requiereFacturacion ?? !!c.rfc,
+          pais: c.pais || "México",
           direccion: { ...initial.direccion, ...(c.direccion || {}) },
           facturacion: {
             ...initial.facturacion,
@@ -241,21 +318,6 @@ export default function AltaCliente() {
     fetchCustomer();
   }, [id, isEdit]);
 
-  // 👉 Cargar empleados para el combo de Asesor Responsable
-  useEffect(() => {
-    const loadEmpleados = async () => {
-      try {
-        const data = await listarEmpleados({ activo: true }); // solo activos
-        setEmpleados(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.error("Error cargando empleados", e);
-        setEmpleados([]);
-      }
-    };
-
-    loadEmpleados();
-  }, []);
-
   const onSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -309,12 +371,16 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
         await updateCustomer(id, payload);
         setMsg("✅ Cliente actualizado correctamente.");
       } else {
-        await createCustomer(payload);
+        const res = await createCustomer(payload);
         setMsg("✅ Cliente creado correctamente.");
         setForm(initial);
+        if (modoModal && onClienteCreado) {
+          onClienteCreado(res.data?.data || res.data); // avisa al padre y cierra el modal
+          return;
+        }
       }
 
-      navigate("/clientes/consulta");
+      if (!modoModal) navigate("/clientes/consulta");
     } catch (err) {
       setMsg("❌ " + (err?.response?.data?.error || err.message));
     } finally {
@@ -373,45 +439,13 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
               onChange={(e) => upd("apellidoMaterno", e.target.value)}
             />
           </div>
-          <div className="form-row">
-            <label>Correo Electrónico</label>
-            <input
-              type="email"
-              value={form.email ?? ""}
-              onChange={(e) => upd("email", e.target.value)}
-            />
-          </div>
+          <EmailList valores={form.emails} onChange={(arr) => upd("emails", arr)} />
+          <TelefonoList label="Teléfonos" valores={form.telefonos} onChange={(arr) => upd("telefonos", arr)} />
+          <TelefonoList label="Celulares" valores={form.celulares} onChange={(arr) => upd("celulares", arr)} />
 
           <div className="form-row">
-            <label>Teléfono Fijo</label>
-            <div className="phone-inline">
-              <input
-                placeholder="LADA"
-                value={form.telefono?.lada ?? ""}
-                onChange={(e) => upd("telefono.lada", e.target.value)}
-              />
-              <input
-                placeholder="Número"
-                value={form.telefono?.numero ?? ""}
-                onChange={(e) => upd("telefono.numero", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <label>Celular</label>
-            <div className="phone-inline">
-              <input
-                placeholder="LADA"
-                value={form.celular?.lada ?? ""}
-                onChange={(e) => upd("celular.lada", e.target.value)}
-              />
-              <input
-                placeholder="Número"
-                value={form.celular?.numero ?? ""}
-                onChange={(e) => upd("celular.numero", e.target.value)}
-              />
-            </div>
+            <label>País</label>
+            <input value={form.pais ?? ""} onChange={(e) => upd("pais", e.target.value)} />
           </div>
         </div>
       )}
@@ -815,6 +849,21 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
       {/* ===== Facturación ===== */}
       <h3>Datos de Facturación</h3>
       <div className="form-grid">
+        <div className="form-row col-12">
+          <label>
+            <input
+              type="checkbox"
+              checked={!!form.requiereFacturacion}
+              onChange={(e) => upd("requiereFacturacion", e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            ¿El cliente requiere facturación?
+          </label>
+        </div>
+      </div>
+
+      {form.requiereFacturacion && (
+      <div className="form-grid">
         <div className="form-row">
           <label>RFC</label>
           <input
@@ -912,36 +961,10 @@ if (!payload.codigoPostalFiscal && payload.facturacion?.direccion?.codigoPostal)
             }
           />
         </div>
+      </div>
+      )}
 
-        {/* 👉 Combo de Asesor Responsable */}
-        <div className="form-row">
-          <label>Asesor Responsable</label>
-          <select
-            value={form.asesorResponsable ?? ""}
-            onChange={(e) => upd("asesorResponsable", e.target.value)}
-          >
-            <option value="">-- Seleccionar --</option>
-            {empleados.map((emp) => (
-              <option key={emp._id} value={emp.nombre}>
-                {emp.nombre}
-                {emp.puesto ? ` (${emp.puesto})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="form-row">
-          <label>Condiciones de Pago</label>
-          <select
-            value={form.condicionesPago ?? ""}
-            onChange={(e) => upd("condicionesPago", e.target.value)}
-            placeholder="Contado, Crédito 15, Crédito 30..."
-          >
-            <option value="">-- Seleccionar --</option>
-            <option value="Contado">Contado</option>
-            <option value="Credito">Crédito</option>
-          </select>
-        </div>
+      <div className="form-grid">
         <div className="form-row col-12">
           <label>Observaciones</label>
           <textarea

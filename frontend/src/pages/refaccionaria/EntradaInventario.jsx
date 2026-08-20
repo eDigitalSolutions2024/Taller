@@ -1,17 +1,50 @@
 // frontend/src/pages/refaccionaria/EntradaInventario.jsx
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import TablaCapturaEntrada from "./components/TablaCapturaEntrada";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:4000/api";
 
 export default function EntradaInventario() {
+  const [searchParams] = useSearchParams();
+  const idContinuar = searchParams.get("id");
+
   const [loading, setLoading] = useState(false);
   const [proveedores, setProveedores] = useState([]);
+  const [cargandoBorrador, setCargandoBorrador] = useState(!!idContinuar);
 
   // 👇 se llena tras crear la entrada; controla mostrar la tabla
   const [entradaId, setEntradaId] = useState(null);
   const [entradaInfo, setEntradaInfo] = useState(null);
   const tablaRef = useRef(null);
+
+  // Si viene ?id= en la URL, retoma directo la captura de ese borrador (no
+  // vuelve a mostrar el formulario de encabezado).
+  useEffect(() => {
+    if (!idContinuar) return;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/entradas/${idContinuar}`, { credentials: "include" });
+        const json = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(json?.message || "No se pudo cargar el borrador.");
+        const entrada = json.data;
+        setEntradaId(entrada._id);
+        setEntradaInfo({
+          id: entrada._id,
+          proveedorNombre: entrada.proveedorId?.nombreProveedor || entrada.proveedorId?.nombre || "",
+          numero: entrada.numero,
+          fecha: entrada.fechaFactura ? entrada.fechaFactura.split("T")[0] : "",
+          moneda: entrada.moneda,
+          comprobante: entrada.tipoComprobante,
+        });
+      } catch (err) {
+        console.error(err);
+        alert(err.message || "Error al cargar el borrador.");
+      } finally {
+        setCargandoBorrador(false);
+      }
+    })();
+  }, [idContinuar]);
 
   const [form, setForm] = useState({
     comprobante: "Factura",
@@ -55,24 +88,22 @@ const onSubmit = async (e) => {
   if (!form.fecha) return alert("Selecciona la fecha de la factura.");
   if (!form.numero.trim()) return alert("Ingresa el número de factura o remisión.");
 
-  // 👇 Enviamos JSON al endpoint del backend que ya tienes
-  const payload = {
-    tipoComprobante: form.comprobante,
-    numero: form.numero.trim(),
-    moneda: form.moneda,
-    formaPago: form.formaPago,
-    proveedorId: form.proveedorId,
-    fechaFactura: form.fecha,
-    // fotoFactura: null // (si quieres subir archivo, ver opción B)
-  };
+  // FormData para poder incluir la foto/PDF de la factura (si se seleccionó).
+  const payload = new FormData();
+  payload.append("tipoComprobante", form.comprobante);
+  payload.append("numero", form.numero.trim());
+  payload.append("moneda", form.moneda);
+  payload.append("formaPago", form.formaPago);
+  payload.append("proveedorId", form.proveedorId);
+  payload.append("fechaFactura", form.fecha);
+  if (form.foto) payload.append("fotoFactura", form.foto);
 
   try {
     setLoading(true);
     const r = await fetch(`${API}/entradas`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(payload),
+      body: payload,
     });
     const json = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(json?.message || "Error al crear la entrada");
@@ -106,6 +137,11 @@ const onSubmit = async (e) => {
     <div className="container-fluid py-3">
       <div className="row justify-content-center">
         <div className="col-12 col-xxl-10">
+          {cargandoBorrador && (
+            <div className="text-center text-muted py-4">Cargando borrador…</div>
+          )}
+
+          {!idContinuar && (
           <div className="card shadow-sm border-0">
             <div className="card-header bg-white border-0">
               <h2 className="h4 text-center mb-0">ALTA DE MATERIAL EN INVENTARIO VARIABLE</h2>
@@ -208,6 +244,7 @@ const onSubmit = async (e) => {
               Completa los datos del documento de compra para iniciar la captura de partidas.
             </div>
           </div>
+          )}
 
           {/* 👇 SOLO aparece cuando ya hay entradaId */}
           {entradaId && (
